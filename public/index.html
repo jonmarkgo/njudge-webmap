@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Machiavelli Adjudicator Command Helper</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/viewerjs/1.11.6/viewer.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chosen-js@1.8.7/chosen.min.css"/>
+    <style>
+        body { padding-top: 20px; background-color: #f8f9fa; }
+        .container-fluid { max-width: 1200px; }
+        .section {
+            background-color: #fff;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-radius: .25rem;
+            box-shadow: 0 .125rem .25rem rgba(0,0,0,.075);
+        }
+        h1, h2, h3, h4 { color: #5a2d0c; }
+        label { font-weight: bold; }
+        textarea#commandsArea { font-family: monospace; font-size: 0.9em; min-height: 400px; }
+        .btn-brown { background-color: #8c5a3c; color: white; }
+        .btn-brown:hover { background-color: #704830; color: white; }
+        .hidden { display: none !important; }
+        .row > [class*="col-"] {
+            padding-right: 15px;
+            padding-left: 15px;
+        }
+        #mapContainerDiv {
+            width: 100%;
+            min-height: 500px;
+            border: 1px solid #ccc;
+        }
+        .map-container {
+            position: relative;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container-fluid">
+    <div class="text-center mb-4">
+        <h1>Machiavelli Adjudicator Command Helper</h1>
+    </div>
+
+    <div class="row">
+        <!-- Left Column: Input Forms -->
+        <div class="col-md-6">
+            <div class="section" id="orderBuilder">
+                <h2>Unit Orders (Movement/Action Phase)</h2>
+                <div class="form-row mb-2">
+                    <div class="form-group col-md-4">
+                        <label for="unitType">Unit Type:</label>
+                        <select id="unitType" class="form-control form-control-sm">
+                            <option value="A">Army (A)</option>
+                            <option value="F">Fleet (F)</option>
+                            <option value="G">Garrison (G)</option>
+                        </select>
+                    </div>
+                    <div class="form-group col-md-4">
+                        <label for="unitLocation">Unit Location:</label>
+                        <select id="unitLocation" class="form-control form-control-sm"></select>
+                    </div>
+                    <div class="form-group col-md-4">
+                        <label for="unitCoast">Unit Coast (if F):</label>
+                        <select id="unitCoast" class="form-control form-control-sm">
+                            <option value="">N/A</option>
+                            <option value="/NC">(NC)</option>
+                            <option value="/SC">(SC)</option>
+                            <option value="/EC" disabled>(EC)</option>
+                            <option value="/WC" disabled>(WC)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="orderType">Order:</label>
+                    <select id="orderType" class="form-control form-control-sm">
+                        <option value="H">Hold (H)</option>
+                        <option value="M">Move (-)</option>
+                        <option value="S_H">Support Hold (S)</option>
+                        <option value="S_M">Support Move (S)</option>
+                        <option value="C">Convoy (C)</option>
+                        <option value="CONV">Convert (=)</option>
+                        <option value="B">Besiege (B)</option>
+                        <option value="LIFT">Lift Siege (LS)</option>
+                        <option value="DISB">Disband (D)</option>
+                    </select>
+                </div>
+
+                <div id="moveFields" class="form-row mb-2 hidden">
+                    <div class="form-group col-md-4"><label for="moveTargetProvince">Target Province:</label><select id="moveTargetProvince" class="form-control form-control-sm"></select></div>
+                    <div class="form-group col-md-4"><label for="moveTargetCoast">Target Coast:</label><select id="moveTargetCoast" class="form-control form-control-sm">
+                        <option value="">N/A</option><option value="/NC">(NC)</option><option value="/SC">(SC)</option><option value="/EC">(EC)</option><option value="/WC">(WC)</option>
+                    </select></div>
+                    <div class="form-group col-md-4"><label for="viaConvoyRoute">Via Convoy Route:</label><input type="text" class="form-control form-control-sm" id="viaConvoyRoute" placeholder="e.g., TYN-GON"></div>
+                </div>
+
+                <div id="supportFields" class="form-row mb-2 hidden">
+                    <div class="form-group col-md-4"><label for="supportedUnitType">Supported Unit Type:</label><select id="supportedUnitType" class="form-control form-control-sm"><option value="A">A</option><option value="F">F</option><option value="G">G</option></select></div>
+                    <div class="form-group col-md-4"><label for="supportedUnitLocation">Supported Unit Location:</label><select id="supportedUnitLocation" class="form-control form-control-sm"></select></div>
+                    <div class="form-group col-md-4"><label for="supportedUnitCoast">Supported Unit Coast (if F):</label><select id="supportedUnitCoast" class="form-control form-control-sm">
+                        <option value="">N/A</option><option value="/NC">(NC)</option><option value="/SC">(SC)</option><option value="/EC">(EC)</option><option value="/WC">(WC)</option>
+                    </select></div>
+                </div>
+                <div id="supportMoveFields" class="form-row mb-2 hidden">
+                     <div class="form-group col-md-6"><label for="supportedMoveTargetProvince">Supported Move To:</label><select id="supportedMoveTargetProvince" class="form-control form-control-sm"></select></div>
+                     <div class="form-group col-md-6"><label for="supportedMoveTargetCoast">Supported Target Coast:</label><select id="supportedMoveTargetCoast" class="form-control form-control-sm">
+                          <option value="">N/A</option><option value="/NC">(NC)</option><option value="/SC">(SC)</option><option value="/EC">(EC)</option><option value="/WC">(WC)</option>
+                     </select></div>
+                </div>
+
+                 <div id="convoyFields" class="form-row mb-2 hidden">
+                    <div class="form-group col-md-6"><label for="convoyedArmyLocation">Convoyed Army From:</label><select id="convoyedArmyLocation" class="form-control form-control-sm"></select></div>
+                    <div class="form-group col-md-6"><label for="convoyedArmyTargetProvince">Convoyed Army To:</label><select id="convoyedArmyTargetProvince" class="form-control form-control-sm"></select></div>
+                </div>
+
+                <div id="convertFields" class="form-row mb-2 hidden">
+                    <div class="form-group col-md-6"><label for="convertToUnitType">Convert To:</label><select id="convertToUnitType" class="form-control form-control-sm"><option value="A">Army (A)</option><option value="F">Fleet (F)</option><option value="G">Garrison (G)</option></select></div>
+                    <div class="form-group col-md-6"><label for="convertToCoast">Target Coast (if new F):</label><select id="convertToCoast" class="form-control form-control-sm">
+                        <option value="">N/A</option><option value="/NC">(NC)</option><option value="/SC">(SC)</option><option value="/EC">(EC)</option><option value="/WC">(WC)</option>
+                    </select></div>
+                </div>
+                <button id="addOrderButton" class="btn btn-brown btn-block">Add Unit Order</button>
+            </div>
+
+            <div class="section" id="adjustmentOrderBuilder">
+                <h2>Adjustment Orders (Build, Maintain, Remove)</h2>
+                <div class="form-group">
+                    <label for="adjustmentOrderAction">Action:</label>
+                    <select id="adjustmentOrderAction" class="form-control form-control-sm">
+                        <option value="BUILD">Build Unit</option>
+                        <option value="MAINTAIN">Maintain Unit</option>
+                        <option value="REMOVE">Remove Unit (Disband)</option>
+                    </select>
+                </div>
+
+                <div id="buildOrderFields" class="mb-2">
+                    <h4>Build Details</h4>
+                    <div class="form-row">
+                        <div class="form-group col-md-6">
+                            <label for="buildSpecialType">Special Unit Type:</label>
+                            <select id="buildSpecialType" class="form-control form-control-sm">
+                                <option value="">Normal Unit</option>
+                                <option value="cm" disabled>Citizen's Militia (CM)</option>
+                                <option value="em" disabled>Elite Mercenary (EM)</option>
+                                <option value="ep" disabled>Elite Professional (EP)</option>
+                            </select>
+                        </div>
+                        <div class="form-group col-md-6">
+                            <label for="buildUnitType">Unit Type to Build:</label>
+                            <select id="buildUnitType" class="form-control form-control-sm">
+                                <option value="A">Army (A)</option>
+                                <option value="F">Fleet (F)</option>
+                                <option value="G">Garrison (G)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group col-md-6">
+                            <label for="buildLocation">Build Location (Province):</label>
+                            <select id="buildLocation" class="form-control form-control-sm"></select>
+                        </div>
+                        <div class="form-group col-md-6">
+                            <label for="buildCoast">Build Coast (if Fleet):</label>
+                            <select id="buildCoast" class="form-control form-control-sm">
+                                <option value="">N/A</option>
+                                <option value="/NC">(NC)</option>
+                                <option value="/SC">(SC)</option>
+                                <option value="/EC">(EC)</option>
+                                <option value="/WC">(WC)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="maintainOrderFields" class="mb-2 hidden">
+                    <h4>Maintain Details</h4>
+                    <div class="form-row">
+                        <div class="form-group col-md-4">
+                            <label for="maintainUnitType">Unit Type:</label>
+                            <select id="maintainUnitType" class="form-control form-control-sm">
+                                <option value="A">Army (A)</option>
+                                <option value="F">Fleet (F)</option>
+                                <option value="G">Garrison (G)</option>
+                            </select>
+                        </div>
+                        <div class="form-group col-md-4">
+                            <label for="maintainLocation">Unit Location:</label>
+                            <select id="maintainLocation" class="form-control form-control-sm"></select>
+                        </div>
+                        <div class="form-group col-md-4">
+                            <label for="maintainCoast">Unit Coast (if Fleet):</label>
+                            <select id="maintainCoast" class="form-control form-control-sm">
+                                <option value="">N/A</option>
+                                <option value="/NC">(NC)</option>
+                                <option value="/SC">(SC)</option>
+                                <option value="/EC">(EC)</option>
+                                <option value="/WC">(WC)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="removeOrderFields" class="mb-2 hidden">
+                    <h4>Remove Details</h4>
+                     <div class="form-row">
+                        <div class="form-group col-md-4">
+                            <label for="removeUnitType">Unit Type:</label>
+                            <select id="removeUnitType" class="form-control form-control-sm">
+                                <option value="A">Army (A)</option>
+                                <option value="F">Fleet (F)</option>
+                                <option value="G">Garrison (G)</option>
+                            </select>
+                        </div>
+                        <div class="form-group col-md-4">
+                            <label for="removeLocation">Unit Location:</label>
+                            <select id="removeLocation" class="form-control form-control-sm"></select>
+                        </div>
+                        <div class="form-group col-md-4">
+                            <label for="removeCoast">Unit Coast (if Fleet):</label>
+                            <select id="removeCoast" class="form-control form-control-sm">
+                                <option value="">N/A</option>
+                                <option value="/NC">(NC)</option>
+                                <option value="/SC">(SC)</option>
+                                <option value="/EC">(EC)</option>
+                                <option value="/WC">(WC)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <button id="addAdjustmentOrderButton" class="btn btn-brown btn-block">Add Adjustment Order</button>
+            </div>
+
+            <div class="section" id="financialOrders">
+                <h3>Financial & Special Orders (Movement/Action Phase)</h3>
+                <div id="expenditureBuilder" class="mb-3">
+                    <h4>Expenditures (Max 4 per turn)</h4>
+                    <div class="form-row">
+                        <div class="form-group col-md-4">
+                            <label for="expenditureNumber">Expense #:</label>
+                            <select id="expenditureNumber" class="form-control form-control-sm"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select>
+                        </div>
+                        <div class="form-group col-md-8">
+                            <label for="expenditureType">Type:</label>
+                            <select id="expenditureType" class="form-control form-control-sm">
+                                <option value="famine relief" disabled>Famine Relief (3d)</option>
+                                <option value="pacify rebellion">Pacify Rebellion (12d)</option>
+                                <option value="counter-bribe">Counter-Bribe (3d+)</option>
+                                <option value="disband_auto_g">Disband Autonomous Garrison (6d+)</option>
+                                <option value="buy_auto_g">Buy Autonomous Garrison (9d+)</option>
+                                <option value="commit_g_auto">Committed Garrison to Autonomous (9d+)</option>
+                                <option value="disband_commit_g">Disband Committed Garrison (12d+)</option>
+                                <option value="disband_unit">Disband Army/Fleet (bribe) (12d+)</option>
+                                <option value="buy_unit">Buy Army/Fleet/Garrison (bribe) (18d+)</option>
+                                <option value="rebel_conquered">Cause Rebellion (Conquered Prov) (9d)</option>
+                                <option value="rebel_home">Cause Rebellion (Home Prov) (15d)</option>
+                                <option value="assassinate" disabled>Assassinate (12d/24d/36d)</option>
+                                <option value="none">None (Clear this expense)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                         <div class="form-group col-md-4"><label for="expenditureAmount">Amount (Ducats):</label><input type="number" class="form-control form-control-sm" id="expenditureAmount" placeholder="e.g., 9"></div>
+                         <div id="expTargetUnitTypeDiv" class="form-group col-md-3 hidden"><label for="expTargetUnitType">Target Unit Type:</label><select id="expTargetUnitType" class="form-control form-control-sm"><option value="A">A</option><option value="F">F</option><option value="G">G</option></select></div>
+                         <div id="expTargetProvinceDiv" class="form-group col-md-5 hidden"><label for="expTargetProvince">Target Province:</label><select id="expTargetProvince" class="form-control form-control-sm"></select></div>
+                         <div id="expTargetPowerDiv" class="form-group col-md-5 hidden"><label for="expTargetPower">Target Power:</label><select id="expTargetPower" class="form-control form-control-sm"></select></div>
+                    </div>
+                    <button id="addExpenditureButton" class="btn btn-brown btn-sm btn-block">Add Expenditure</button>
+                </div>
+
+                <div id="loanBuilder" class="mb-3">
+                    <h4>Loans & Payments</h4>
+                    <div class="form-row">
+                        <div class="form-group col-md-6">
+                            <label for="loanPayType">Action:</label>
+                            <select id="loanPayType" class="form-control form-control-sm">
+                                <option value="pay_player">Send Money to Another Player</option>
+                                <option value="borrow">Borrow from Bank</option>
+                                <option value="pay_bank">Pay to Bank</option>
+                                <option value="give_chit" disabled>Give Assassination Chit</option>
+                            </select>
+                        </div>
+                        <div class="form-group col-md-6"><label for="loanAmount">Amount (Ducats):</label> <input type="number" class="form-control form-control-sm" id="loanAmount" placeholder="e.g., 10"></div>
+                    </div>
+                    <div class="form-row">
+                        <div id="loanDurationDiv" class="form-group col-md-4 hidden"><label for="loanDuration">Duration:</label><select id="loanDuration" class="form-control form-control-sm"><option value="1">1 Year (20%)</option><option value="2">2 Years (50%)</option></select></div>
+                        <div id="loanTargetPlayerDiv" class="form-group col-md-4 hidden"><label for="loanTargetPlayer">Target Player:</label><select id="loanTargetPlayer" class="form-control form-control-sm"></select></div>
+                        <div id="chitToGiveDiv" class="form-group col-md-4 hidden"><label for="chitToGive">Chit of Power:</label><select id="chitToGive" class="form-control form-control-sm"></select></div>
+                    </div>
+                     <button id="addLoanPayButton" class="btn btn-brown btn-sm btn-block">Add Loan/Pay Command</button>
+                </div>
+
+                <div id="allianceBuilder">
+                    <h4>Alliance (for Straits)</h4>
+                    <div class="form-row">
+                        <div class="form-group col-md-6">
+                            <label for="allyAction">Action:</label>
+                            <select id="allyAction" class="form-control form-control-sm"><option value="ALLY">ALLY</option><option value="UNALLY">UNALLY</option></select>
+                        </div>
+                        <div class="form-group col-md-6"><label for="allyTargetPower">Target Power:</label><select id="allyTargetPower" class="form-control form-control-sm"></select></div>
+                    </div>
+                    <button id="addAllyButton" class="btn btn-brown btn-sm btn-block">Add Ally/Unally Command</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: Command Output & Map -->
+        <div class="col-md-6">
+            <div class="section" id="commandOutput">
+                <h2>Generated Commands</h2>
+                <div class="form-group">
+                    <textarea id="commandsArea" class="form-control" placeholder="Commands will appear here..."></textarea>
+                </div>
+                <div class="command-output-actions">
+                    <button id="copyCommandsButton" class="btn btn-primary btn-block mb-2">Copy All with SIGNON/SIGNOFF to Clipboard</button>
+                    <button id="clearCommandsButton" class="btn btn-danger btn-block">Clear All Commands</button>
+                </div>
+            </div>
+
+            <div class="section" id="mapDisplaySection">
+                <h2>Live Game Map</h2>
+                <button id="refreshMapButton" class="btn btn-info btn-block mb-2">Refresh Map</button>
+                <div class="map-container mb-2">
+                    <div id="mapContainerDiv">
+                        <div id="my-container" class="ng-scope pngobject-container" style="width:100%;">
+                            <img src="" alt="Game Map" style="width:100%;height:auto;min-height:500px;object-fit:contain;display:block;margin:auto;" />
+                        </div>
+                    </div>
+                </div>
+                <p id="mapStatus" class="text-muted text-center small mt-2"></p>
+            </div>
+
+            <div class="section" id="gameSetup">
+                <h2>Game Setup</h2>
+                <div class="form-row">
+                    <div class="form-group col-md-6">
+                        <label for="gameName">Game Name:</label>
+                        <input type="text" class="form-control" id="gameName" value="machtest12345"> <!-- Defaulted to machtest12345 -->
+                    </div>
+                    <div class="form-group col-md-6">
+                        <label for="password">Password:</label>
+                        <input type="password" class="form-control" id="password" value="secret">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group col-md-12">
+                        <label for="playerPower">Your Power:</label>
+                        <select id="playerPower" class="form-control">
+                            <option value="A">Austria</option>
+                            <option value="F">France</option>
+                            <option value="L">Florence</option>
+                            <option value="I">Milan</option>
+                            <option value="N">Naples</option>
+                            <option value="P">Papacy</option>
+                            <option value="T">Turkey</option>
+                            <option value="V">Venice</option>
+                        </select>
+                    </div>
+                </div>
+<div class="form-row">
+                    <div class="form-group col-md-12">
+                        <label for="playerEmail">Your Email:</label>
+                        <input type="email" class="form-control" id="playerEmail" placeholder="Enter your email">
+                    </div>
+                </div>
+                <button id="saveSetupButton" class="btn btn-info btn-sm">Save Game Info</button>
+                <button id="clearSetupButton" class="btn btn-warning btn-sm">Clear Saved Game Info</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bootstrap JS and dependencies (jQuery, Popper.js) -->
+<script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
+<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/viewerjs/1.11.6/viewer.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chosen-js@1.8.7/chosen.jquery.min.js"></script>
+
+<!-- Your custom script -->
+<script src="/js/script.js" defer></script>
+
+</body>
+</html>
