@@ -784,14 +784,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(errorMsg);
             }
             const json = await response.json();
-            if (!json.image) {
-                throw new Error('Map request failed: No image data in response.');
+            let imageUrlToLoad;
+
+            if (json.imageUrl) {
+                // If a direct image URL is provided (from cache)
+                imageUrlToLoad = json.imageUrl;
+                console.log('Using cached image URL:', imageUrlToLoad);
+            } else if (json.image) {
+                // If base64 image data is provided (newly generated)
+                imageUrlToLoad = 'data:image/png;base64,' + json.image;
+                console.log('Using base64 image data for newly generated map.');
+            } else {
+                throw new Error('Map request failed: No image data or image URL in response.');
             }
-            const base64Url = 'data:image/png;base64,' + json.image;
 
             if (imgElement) {
-                imgElement.src = base64Url;
+                imgElement.src = imageUrlToLoad;
                 if (typeof Viewer !== 'undefined') {
+                    // Destroy previous instance if exists, before creating a new one
+                    if (viewerInstance) {
+                        viewerInstance.destroy();
+                    }
                     viewerInstance = new Viewer(imgElement, {
                         inline: false,
                         toolbar: {

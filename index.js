@@ -121,7 +121,7 @@ SIGN OFF
         }
 
         const stdout = dipResult.stdout;
-        const phaseRegex = /Game '[^']+' order #\d+ \((F\d{4}[A-Z])\)/;
+        const phaseRegex = /Game '[^']+' order #\d+ \(([A-Z]\d+[A-Z])\)/;
         const match = stdout.match(phaseRegex);
 
         if (match && match[1]) {
@@ -129,7 +129,7 @@ SIGN OFF
             console.log(`[getGamePhase] Extracted phase: ${phase} for game ${gameName}`);
             return phase;
         } else {
-            const deadlinePhaseRegex = /:: Deadline: (F\d{4}[A-Z])/;
+            const deadlinePhaseRegex = /:: Deadline: ([A-Z]\d+[A-Z])/;
             const deadlineMatch = stdout.match(deadlinePhaseRegex);
             if (deadlineMatch && deadlineMatch[1]) {
                 const phase = deadlineMatch[1];
@@ -152,6 +152,8 @@ SIGN OFF
 
 // Serve static files from the 'public' directory
 app.use(express.static(path.join(__dirname, 'public')));
+// Serve cached maps statically
+app.use('/cached_maps', express.static(path.join(__dirname, 'cached_maps')));
 app.use(express.json());
 app.use(cookieParser());
 
@@ -200,11 +202,11 @@ app.get('/generate-map', async (req, res) => {
         }
 
         if (fsSync.existsSync(cachedImagePath)) {
-            console.log(`Cache hit: Found ${cachedImagePath} for phase ${currentPhase}, game ${requestedGameName}.`);
-            const imageBuffer = await fs.readFile(cachedImagePath);
-            const base64Png = imageBuffer.toString('base64');
+            console.log(`Cache hit: Found ${cachedImagePath} for phase ${currentPhase}, game ${requestedGameName}. Serving URL.`);
+            // Construct the URL relative to the domain root
+            const imageUrl = `/cached_maps/${requestedGameName}/${cachedImageFileName}`;
             return res.json({
-                image: base64Png,
+                imageUrl: imageUrl,
                 source: 'cache',
                 phase: currentPhase,
                 gameName: requestedGameName
@@ -289,11 +291,14 @@ SIGN OFF
                         } catch (writeError) {
                             console.error(`Error saving map to cache ${cachedImagePath}: ${writeError.message}`);
                         }
+                        // For newly generated images, send base64 directly for immediate display
                         res.json({
                             image: gsOutput.toString('base64'),
                             source: 'generated',
                             phase: currentPhase,
-                            gameName: requestedGameName
+                            gameName: requestedGameName,
+                            // Optionally, provide the future cache URL as well, though client might not use it immediately
+                            // futureImageUrl: `/cached_maps/${requestedGameName}/${cachedImageFileName}`
                         });
                         resolveMapit();
                     } else {
