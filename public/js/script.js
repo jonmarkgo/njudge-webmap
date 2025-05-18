@@ -9,7 +9,8 @@ document.addEventListener('DOMContentLoaded', () => {
         { name: "Naples", letter: "N", homeProvinces: ["AQU", "BAR", "CAP", "MES", "NAP", "OTR", "PAL", "SLR"] },
         { name: "Papacy", letter: "P", homeProvinces: ["ANC", "BOL", "PAT", "PER", "RME", "SPO", "URB"] },
         { name: "Turkey", letter: "T", homeProvinces: ["ALB", "BOS", "DUR", "HER", "TUN"] },
-        { name: "Venice", letter: "V", homeProvinces: ["BER", "BRE", "DAL", "FRI", "IST", "PAD", "TRV", "VEN", "VER", "VIC"] }
+        { name: "Venice", letter: "V", homeProvinces: ["BER", "BRE", "DAL", "FRI", "IST", "PAD", "TRV", "VEN", "VER", "VIC"] },
+        { name: "Master", letter: "M", homeProvinces: [] }
     ];
 
     const multiCoastalProvinces = {
@@ -668,12 +669,45 @@ document.addEventListener('DOMContentLoaded', () => {
             const result = await response.json();
 
             if (response.ok) {
-                cliOutputBoxEl.value = `Execution successful:\n\n${result.stdout || 'No output from command.'}`;
+                let outputText = `Execution successful:\n\n${result.stdout || 'No output from command.'}`;
                 if(result.stderr) {
-                    cliOutputBoxEl.value += `\n\nStderr:\n${result.stderr}`;
+                    outputText += `\n\nStderr:\n${result.stderr}`;
                 }
+
+                // Display secondary command output if present
+                if (result.secondaryError) {
+                    outputText += `\n\n--- Secondary Command ---\nError: ${result.secondaryError}`;
+                } else if (result.secondaryStdout || result.secondaryStderr) {
+                    outputText += `\n\n--- Secondary Command (Exit Code: ${result.secondaryExitCode === undefined ? 'N/A' : result.secondaryExitCode}) ---`;
+                    if (result.secondaryStdout) {
+                        outputText += `\nStdout:\n${result.secondaryStdout}`;
+                    }
+                    if (result.secondaryStderr) {
+                        outputText += `\nStderr:\n${result.secondaryStderr}`;
+                    }
+                }
+                cliOutputBoxEl.value = outputText;
             } else {
-                cliOutputBoxEl.value = `Execution failed: ${result.error || response.statusText}\n\nDetails:\n${result.details || ''}\n\nStderr:\n${result.stderr || ''}`;
+                let errorOutputText = `Execution failed: ${result.error || response.statusText}\n\nDetails:\n${result.details || ''}`;
+                if (result.stdout) { // Include primary stdout even on failure if available
+                    errorOutputText += `\n\nStdout (Primary):\n${result.stdout}`;
+                }
+                if (result.stderr) {
+                     errorOutputText += `\n\nStderr (Primary):\n${result.stderr}`;
+                }
+                // Also show secondary output/error if the primary failed but secondary was attempted and included in response
+                if (result.secondaryError) {
+                    errorOutputText += `\n\n--- Secondary Command ---\nError: ${result.secondaryError}`;
+                } else if (result.secondaryStdout || result.secondaryStderr) {
+                    errorOutputText += `\n\n--- Secondary Command (Exit Code: ${result.secondaryExitCode === undefined ? 'N/A' : result.secondaryExitCode}) ---`;
+                    if (result.secondaryStdout) {
+                        errorOutputText += `\nStdout:\n${result.secondaryStdout}`;
+                    }
+                    if (result.secondaryStderr) {
+                        errorOutputText += `\nStderr:\n${result.secondaryStderr}`;
+                    }
+                }
+                cliOutputBoxEl.value = errorOutputText;
             }
         } catch (error) {
             console.error('Error executing command:', error);
@@ -728,12 +762,44 @@ document.addEventListener('DOMContentLoaded', () => {
             const result = await response.json();
 
             if (response.ok) {
-                cliOutputBoxEl.value = `LIST command successful:\n\n${result.stdout || 'No output from command.'}`;
+                let listOutputText = `LIST command successful:\n\n${result.stdout || 'No output from command.'}`;
                 if(result.stderr) {
-                    cliOutputBoxEl.value += `\n\nStderr:\n${result.stderr}`;
+                    listOutputText += `\n\nStderr:\n${result.stderr}`;
                 }
+                
+                // Display secondary command output if present (though less likely for LIST, good for consistency)
+                if (result.secondaryError) {
+                    listOutputText += `\n\n--- Secondary Command ---\nError: ${result.secondaryError}`;
+                } else if (result.secondaryStdout || result.secondaryStderr) {
+                    listOutputText += `\n\n--- Secondary Command (Exit Code: ${result.secondaryExitCode === undefined ? 'N/A' : result.secondaryExitCode}) ---`;
+                    if (result.secondaryStdout) {
+                        listOutputText += `\nStdout:\n${result.secondaryStdout}`;
+                    }
+                    if (result.secondaryStderr) {
+                        listOutputText += `\nStderr:\n${result.secondaryStderr}`;
+                    }
+                }
+                cliOutputBoxEl.value = listOutputText;
             } else {
-                cliOutputBoxEl.value = `LIST command failed: ${result.error || response.statusText}\n\nDetails:\n${result.details || ''}\n\nStderr:\n${result.stderr || ''}`;
+                let listErrorOutputText = `LIST command failed: ${result.error || response.statusText}\n\nDetails:\n${result.details || ''}`;
+                 if (result.stdout) {
+                    listErrorOutputText += `\n\nStdout (Primary):\n${result.stdout}`;
+                }
+                if (result.stderr) {
+                     listErrorOutputText += `\n\nStderr (Primary):\n${result.stderr}`;
+                }
+                if (result.secondaryError) {
+                    listErrorOutputText += `\n\n--- Secondary Command ---\nError: ${result.secondaryError}`;
+                } else if (result.secondaryStdout || result.secondaryStderr) {
+                    listErrorOutputText += `\n\n--- Secondary Command (Exit Code: ${result.secondaryExitCode === undefined ? 'N/A' : result.secondaryExitCode}) ---`;
+                    if (result.secondaryStdout) {
+                        listErrorOutputText += `\nStdout:\n${result.secondaryStdout}`;
+                    }
+                    if (result.secondaryStderr) {
+                        listErrorOutputText += `\nStderr:\n${result.secondaryStderr}`;
+                    }
+                }
+                cliOutputBoxEl.value = listErrorOutputText;
             }
         } catch (error) {
             console.error('Error executing LIST command:', error);

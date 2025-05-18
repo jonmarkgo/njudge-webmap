@@ -23,6 +23,41 @@ const DIP_TO_EMAIL = "jonmarkgodiplomacyadjudicator@gmail.com";
 const DIP_SUBJECT = "map";
 // --- End Configuration ---
 
+// Helper function to get cookie values
+function getCookieValue(cookieHeader, name) {
+    if (!cookieHeader) {
+        // console.log(`[getCookieValue] Cookie header is null/empty for name: ${name}`);
+        return null;
+    }
+    const cookies = cookieHeader.split(';');
+    // console.log(`[getCookieValue] Searching for name: '${name}' in header: '${cookieHeader}'`);
+    for (let c of cookies) {
+        const originalC = c;
+        const trimmedC = c.trim();
+        const nameToSearch = name + '=';
+        const startsWithResult = trimmedC.startsWith(nameToSearch);
+        
+        if (name === 'machHelperPlayerPower') { // Only log verbosely for the cookie we are debugging
+            console.log(`[getCookieValue Debug for ${name}] Original part: '${originalC}', Trimmed part: '${trimmedC}', Searching for: '${nameToSearch}', StartsWith: ${startsWithResult}`);
+        }
+
+        if (startsWithResult) {
+            const value = trimmedC.substring(nameToSearch.length);
+            // console.log(`[getCookieValue] Found name: '${name}', raw value: '${value}'`);
+            try {
+                const decodedValue = decodeURIComponent(value);
+                // console.log(`[getCookieValue] Decoded value: '${decodedValue}'`);
+                return decodedValue;
+            } catch (e) {
+                console.error(`[getCookieValue] Error decoding URI component for value '${value}':`, e);
+                return value; // Return raw value if decoding fails
+            }
+        }
+    }
+    // console.log(`[getCookieValue] Name '${name}' not found.`);
+    return null;
+}
+
 // Serve static files from the 'public' directory
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -43,20 +78,8 @@ app.get('/api/map-file-data', (req, res) => {
 app.get('/generate-map', (req, res) => {
     console.log('Received request to /generate-map');
 
-    function getCookieValue(cookieHeader, name) {
-        if (!cookieHeader) return null;
-        const cookies = cookieHeader.split(';');
-        for (let c of cookies) {
-            c = c.trim();
-            if (c.startsWith(name + '=')) {
-                return decodeURIComponent(c.substring(name.length + 1));
-            }
-        }
-        return null;
-    }
-
     const cookieHeader = req.headers.cookie;
-    const cookieGameName = getCookieValue(cookieHeader, 'machHelperGameName');
+    const cookieGameName = getCookieValue(cookieHeader, 'machHelperGameName'); // Use top-level function
     const requestedGameName = req.query.gameName || cookieGameName;
     
     let dipCoreCommand = "list machtest12345"; // Default
@@ -289,11 +312,15 @@ SIGN OFF
 // API endpoint to execute DIP commands
 app.post('/api/execute-dip-command', (req, res) => {
     console.log('Received request to /api/execute-dip-command');
-    const { commandBlock, email, subject, gameName } = req.body;
+    const { commandBlock, email, subject, gameName } = req.body; // gameName is also available from body
 
     if (!commandBlock || !email || !subject) {
         return res.status(400).json({ error: 'Missing commandBlock, email, or subject in request body.' });
     }
+
+    console.log(`Raw cookies received: ${req.headers.cookie}`); // Log the entire cookie string
+    const playerPowerCookie = getCookieValue(req.headers.cookie, 'machHelperPlayerPower'); // Use top-level function
+    console.log(`Player Power Cookie (parsed): ${playerPowerCookie}`);
 
     // Construct the input for the dip CLI
     // This is similar to /generate-map but uses the provided commandBlock
@@ -350,7 +377,59 @@ ${commandBlock}
 
         if (dipCode === 0) {
             console.log('dip command execution successful. Stdout:\n', dipStdoutData);
-            res.json({ stdout: dipStdoutData, stderr: dipStderrData });
+            // Primary command successful, now check for master player and run secondary command
+            if (playerPowerCookie === 'M') {
+                console.log('Master player detected (playerPower=M). Executing secondary dip command.');
+                const secondaryDipArgs = ['-C', DIP_CLI_CWD, '-x']; // Align with -C flag usage
+                const commandString = `${DIP_CLI_PATH} ${secondaryDipArgs.join(' ')}`;
+                console.log(`Spawning secondary dip process with bash shell: ${commandString} with CWD: ${DIP_CLI_CWD}`);
+                const secondaryDipProcess = spawn(commandString, [], { cwd: DIP_CLI_CWD, shell: '/bin/bash' });
+
+                let secondaryDipStdout = '';
+                let secondaryDipStderr = '';
+
+                secondaryDipProcess.stdout.on('data', (data) => {
+                    secondaryDipStdout += data.toString();
+                });
+                secondaryDipProcess.stderr.on('data', (data) => {
+                    secondaryDipStderr += data.toString();
+                });
+                secondaryDipProcess.on('error', (spawnError) => {
+                    console.error('Failed to start secondary dip process (spawn error):', spawnError);
+                    // Still send primary response, but indicate secondary process error
+                    if (!res.headersSent && !res.writableEnded) {
+                        res.json({
+                            stdout: dipStdoutData,
+                            stderr: dipStderrData,
+                            secondaryError: `Failed to start secondary process: ${spawnError.message}`
+                        });
+                    }
+                });
+                secondaryDipProcess.on('close', (secDipCode) => {
+                    console.log(`Secondary dip process exited with code ${secDipCode}.`);
+                    if (secondaryDipStdout) {
+                        console.log(`Secondary dip stdout:\n${secondaryDipStdout}`);
+                    }
+                    if (secondaryDipStderr) {
+                        console.error(`Secondary dip stderr:\n${secondaryDipStderr}`);
+                    }
+                    // Send response including secondary process output
+                    if (!res.headersSent && !res.writableEnded) {
+                        res.json({
+                            stdout: dipStdoutData,
+                            stderr: dipStderrData,
+                            secondaryStdout: secondaryDipStdout,
+                            secondaryStderr: secondaryDipStderr,
+                            secondaryExitCode: secDipCode
+                        });
+                    }
+                });
+            } else {
+                // Not a master player, send only primary command output
+                if (!res.headersSent && !res.writableEnded) {
+                    res.json({ stdout: dipStdoutData, stderr: dipStderrData });
+                }
+            }
         } else {
             console.error(`Error: dip process (command execution) exited with code ${dipCode}.`);
             res.status(500).json({
