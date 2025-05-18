@@ -3,6 +3,7 @@ const express = require('express');
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const cookieParser = require('cookie-parser'); // Added cookie-parser
 
 const app = express();
 const port = 3000;
@@ -23,46 +24,13 @@ const DIP_TO_EMAIL = "jonmarkgodiplomacyadjudicator@gmail.com";
 const DIP_SUBJECT = "map";
 // --- End Configuration ---
 
-// Helper function to get cookie values
-function getCookieValue(cookieHeader, name) {
-    if (!cookieHeader) {
-        // console.log(`[getCookieValue] Cookie header is null/empty for name: ${name}`);
-        return null;
-    }
-    const cookies = cookieHeader.split(';');
-    // console.log(`[getCookieValue] Searching for name: '${name}' in header: '${cookieHeader}'`);
-    for (let c of cookies) {
-        const originalC = c;
-        const trimmedC = c.trim();
-        const nameToSearch = name + '=';
-        const startsWithResult = trimmedC.startsWith(nameToSearch);
-        
-        if (name === 'machHelperPlayerPower') { // Only log verbosely for the cookie we are debugging
-            console.log(`[getCookieValue Debug for ${name}] Original part: '${originalC}', Trimmed part: '${trimmedC}', Searching for: '${nameToSearch}', StartsWith: ${startsWithResult}`);
-        }
-
-        if (startsWithResult) {
-            const value = trimmedC.substring(nameToSearch.length);
-            // console.log(`[getCookieValue] Found name: '${name}', raw value: '${value}'`);
-            try {
-                const decodedValue = decodeURIComponent(value);
-                // console.log(`[getCookieValue] Decoded value: '${decodedValue}'`);
-                return decodedValue;
-            } catch (e) {
-                console.error(`[getCookieValue] Error decoding URI component for value '${value}':`, e);
-                return value; // Return raw value if decoding fails
-            }
-        }
-    }
-    // console.log(`[getCookieValue] Name '${name}' not found.`);
-    return null;
-}
 
 // Serve static files from the 'public' directory
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Middleware to parse JSON bodies
 app.use(express.json());
+app.use(cookieParser()); // Use cookie-parser middleware
 
 // API endpoint to serve the map.machiavelli data
 app.get('/api/map-file-data', (req, res) => {
@@ -78,8 +46,7 @@ app.get('/api/map-file-data', (req, res) => {
 app.get('/generate-map', (req, res) => {
     console.log('Received request to /generate-map');
 
-    const cookieHeader = req.headers.cookie;
-    const cookieGameName = getCookieValue(cookieHeader, 'machHelperGameName'); // Use top-level function
+    const cookieGameName = req.cookies.machHelperGameName;
     const requestedGameName = req.query.gameName || cookieGameName;
     
     let dipCoreCommand = "list machtest12345"; // Default
@@ -319,7 +286,7 @@ app.post('/api/execute-dip-command', (req, res) => {
     }
 
     console.log(`Raw cookies received: ${req.headers.cookie}`); // Log the entire cookie string
-    const playerPowerCookie = getCookieValue(req.headers.cookie, 'machHelperPlayerPower'); // Use top-level function
+    const playerPowerCookie = req.cookies.machHelperPlayerPower;
     console.log(`Player Power Cookie (parsed): ${playerPowerCookie}`);
 
     // Construct the input for the dip CLI

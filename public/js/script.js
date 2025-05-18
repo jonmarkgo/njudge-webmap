@@ -112,46 +112,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const mapContainerDiv = document.getElementById('mapContainerDiv');
 
 
-    // --- COOKIE HELPER FUNCTIONS ---
-    function setCookie(name, value, days) {
-        let expires = "";
-        if (days) {
-            const date = new Date();
-            date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
-            expires = "; expires=" + date.toUTCString();
-        }
-        document.cookie = name + "=" + (value || "")  + expires + "; path=/; SameSite=Lax";
-    }
-
-    function getCookie(name) {
-        const nameEQ = name + "=";
-        const ca = document.cookie.split(';');
-        for(let i = 0; i < ca.length; i++) {
-            let c = ca[i];
-            while (c.charAt(0) === ' ') c = c.substring(1, c.length);
-            if (c.indexOf(nameEQ) === 0) return c.substring(nameEQ.length, c.length);
-        }
-        return null;
-    }
-
-    function eraseCookie(name) {
-        document.cookie = name +'=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
-    }
-
     // --- LOAD/SAVE GAME SETUP FROM/TO COOKIES ---
     function saveGameSetup() {
-        setCookie('machHelperGameName', gameNameEl.value, 30);
-        setCookie('machHelperPassword', passwordEl.value, 30);
-        setCookie('machHelperPlayerPower', playerPowerEl.value, 30);
-        setCookie('machHelperPlayerEmail', playerEmailEl.value, 30); // Added for email
+        Cookies.set('machHelperGameName', gameNameEl.value, { expires: 30, path: '/', sameSite: 'Lax' });
+        Cookies.set('machHelperPassword', passwordEl.value, { expires: 30, path: '/', sameSite: 'Lax' });
+        Cookies.set('machHelperPlayerPower', playerPowerEl.value, { expires: 30, path: '/', sameSite: 'Lax' });
+        Cookies.set('machHelperPlayerEmail', playerEmailEl.value, { expires: 30, path: '/', sameSite: 'Lax' }); // Added for email
         alert('Game info saved!');
     }
 
     function loadGameSetup() {
-        const savedGameName = getCookie('machHelperGameName');
-        const savedPassword = getCookie('machHelperPassword');
-        const savedPlayerPower = getCookie('machHelperPlayerPower');
-        const savedPlayerEmail = getCookie('machHelperPlayerEmail'); // Added for email
+        const savedGameName = Cookies.get('machHelperGameName');
+        const savedPassword = Cookies.get('machHelperPassword');
+        const savedPlayerPower = Cookies.get('machHelperPlayerPower');
+        const savedPlayerEmail = Cookies.get('machHelperPlayerEmail'); // Added for email
 
         if (savedGameName) gameNameEl.value = savedGameName;
         if (savedPassword) passwordEl.value = savedPassword;
@@ -160,10 +134,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function clearSavedGameSetup() {
-        eraseCookie('machHelperGameName');
-        eraseCookie('machHelperPassword');
-        eraseCookie('machHelperPlayerPower');
-        eraseCookie('machHelperPlayerEmail'); // Added for email
+        Cookies.remove('machHelperGameName', { path: '/' });
+        Cookies.remove('machHelperPassword', { path: '/' });
+        Cookies.remove('machHelperPlayerPower', { path: '/' });
+        Cookies.remove('machHelperPlayerEmail', { path: '/' }); // Added for email
         gameNameEl.value = "machtest12345"; // Default back
         passwordEl.value = "secret";
         playerPowerEl.value = "A";
