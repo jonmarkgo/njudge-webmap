@@ -24,6 +24,70 @@ const DIP_TO_EMAIL = "jonmarkgodiplomacyadjudicator@gmail.com";
 const DIP_SUBJECT = "map";
 // --- End Configuration ---
 
+// --- Shared DIP Process Spawner ---
+async function spawnDipProcess(stdinContent, customArgs = DIP_CLI_ARGS, customCwd = DIP_CLI_CWD, useShell = false) {
+    return new Promise((resolve, reject) => {
+        console.log(`Spawning dip process: ${DIP_CLI_PATH} ${customArgs.join(' ')} with CWD: ${customCwd}${useShell ? ' (using shell)' : ''}`);
+        const dipProcess = spawn(DIP_CLI_PATH, customArgs, { cwd: customCwd, shell: useShell ? '/bin/bash' : undefined });
+
+        let stdoutData = '';
+        let stderrData = '';
+
+        dipProcess.stdin.on('error', (err) => {
+            console.error('ERROR on dipProcess.stdin:', err);
+            // Don't reject here, as the process might still exit and provide an exit code.
+            // The 'error' event on the process itself will handle spawn failures.
+            // However, if stdin write fails, it's a critical issue for this specific function.
+            if (!dipProcess.killed) dipProcess.kill(); // Attempt to kill if stdin fails critically
+            reject({ error: `Error writing to dip process stdin: ${err.message}`, stdout: stdoutData, stderr: stderrData, exitCode: null });
+        });
+
+        dipProcess.stdout.on('data', (data) => {
+            stdoutData += data.toString();
+        });
+
+        dipProcess.stderr.on('data', (data) => {
+            const errChunk = data.toString();
+            console.error(`dip stderr chunk: ${errChunk}`);
+            stderrData += errChunk;
+        });
+
+        dipProcess.on('error', (spawnError) => {
+            console.error('Failed to start dip process (spawn error):', spawnError);
+            reject({ error: `Failed to start dip process: ${spawnError.message}`, stdout: stdoutData, stderr: stderrData, exitCode: null });
+        });
+
+        dipProcess.on('close', (code, signal) => {
+            console.log(`dip process stream closed, exit code ${code}, signal ${signal}.`);
+            if (stderrData) {
+                console.log(`--- Full dip stderr START ---\n${stderrData}\n--- Full dip stderr END ---`);
+            }
+            // 'close' is usually preferred over 'exit' for stdio streams.
+            // If code is null and signal is present, it means the process was killed by a signal.
+            const exitCode = code === null && signal ? `signal ${signal}` : code;
+            if (code !== 0) {
+                resolve({ stdout: stdoutData, stderr: stderrData, exitCode: exitCode, success: false });
+            } else {
+                resolve({ stdout: stdoutData, stderr: stderrData, exitCode: exitCode, success: true });
+            }
+        });
+        
+        console.log('Attempting to write to dip stdin:\n---START DIP STDIN---\n' + stdinContent + '---END DIP STDIN---');
+        const writeSuccessful = dipProcess.stdin.write(stdinContent);
+        if (writeSuccessful) {
+            dipProcess.stdin.end();
+            console.log('Successfully wrote to dip stdin and closed it.');
+        } else {
+            console.warn('dipProcess.stdin.write returned false (kernel buffer full). Waiting for drain event.');
+            dipProcess.stdin.once('drain', () => {
+                console.log('dipProcess.stdin drained. Now ending stdin.');
+                dipProcess.stdin.end();
+            });
+        }
+    });
+}
+// --- End Shared DIP Process Spawner ---
+
 
 // Serve static files from the 'public' directory
 app.use(express.static(path.join(__dirname, 'public')));
@@ -43,7 +107,7 @@ app.get('/api/map-file-data', (req, res) => {
     });
 });
 
-app.get('/generate-map', (req, res) => {
+app.get('/generate-map', async (req, res) => {
     console.log('Received request to /generate-map');
 
     const cookieGameName = req.cookies.machHelperGameName;
@@ -68,54 +132,18 @@ ${dipCoreCommand}
 SIGN OFF
 `;
 
-    console.log(`Spawning dip process: ${DIP_CLI_PATH} ${DIP_CLI_ARGS.join(' ')} with CWD: ${DIP_CLI_CWD}`);
-    const dipProcess = spawn(DIP_CLI_PATH, DIP_CLI_ARGS, { cwd: DIP_CLI_CWD });
+    try {
+        const dipResult = await spawnDipProcess(dipStdinDynamicContent);
 
-    let dipStdoutData = '';
-    let dipStderrData = '';
-
-    dipProcess.stdin.on('error', (err) => {
-        console.error('ERROR on dipProcess.stdin:', err);
-        if (!res.headersSent && !res.writableEnded) {
-            res.status(500).json({ error: `Error writing to dip process stdin: ${err.message}` });
-        }
-    });
-
-    dipProcess.stdout.on('data', (data) => {
-        dipStdoutData += data.toString();
-    });
-
-    dipProcess.stderr.on('data', (data) => {
-        const errChunk = data.toString();
-        console.error(`dip stderr chunk: ${errChunk}`);
-        dipStderrData += errChunk;
-    });
-
-    dipProcess.on('error', (spawnError) => {
-        console.error('Failed to start dip process (spawn error):', spawnError);
-        if (!res.headersSent && !res.writableEnded) {
-            return res.status(500).json({ error: `Error: Failed to start dip process. ${spawnError.message}` });
-        }
-    });
-    
-    dipProcess.on('exit', (code, signal) => {
-        console.log(`dip process exited with code ${code} and signal ${signal}.`);
-    });
-
-    dipProcess.on('close', (dipCode) => {
-        console.log(`dip process stream closed, exit code ${dipCode}.`);
-        if (dipStderrData) {
-            console.log(`--- Full dip stderr START ---\n${dipStderrData}\n--- Full dip stderr END ---`);
-        }
-
-        if (dipCode !== 0) {
+        if (!dipResult.success) {
+            console.error(`Error: dip process exited with code ${dipResult.exitCode}. Stderr: ${dipResult.stderr}`);
             if (!res.headersSent && !res.writableEnded) {
-                 return res.status(500).json({ error: `Error: dip process exited with code ${dipCode}. Stderr: ${dipStderrData || 'No stderr output from dip.'}`});
+                return res.status(500).json({ error: `Error: dip process exited with code ${dipResult.exitCode}.`, stderr: dipResult.stderr || 'No stderr output from dip.' });
             }
             return;
         }
         
-        console.log('dip stdout (will be mapit stdin):\n---START DIP STDOUT---\n' + dipStdoutData + '\n---END DIP STDOUT---');
+        console.log('dip stdout (will be mapit stdin):\n---START DIP STDOUT---\n' + dipResult.stdout + '\n---END DIP STDOUT---');
 
         const mapitEnv = {
             ...process.env,
@@ -127,7 +155,7 @@ SIGN OFF
         const mapitProcess = spawn(MAPIT_CLI_PATH, [], { env: mapitEnv });
 
         let mapitOutput = Buffer.alloc(0);
-        let mapitStderrDataCollector = ''; // Renamed to avoid conflict
+        let mapitStderrDataCollector = '';
 
         mapitProcess.stdin.on('error', (err) => {
             console.error('ERROR on mapitProcess.stdin:', err);
@@ -155,9 +183,9 @@ SIGN OFF
             }
         });
 
-        mapitProcess.on('exit', (code, signal) => { // Use exit to get exitCode for mapit
+        mapitProcess.on('exit', (code, signal) => {
             console.log(`mapit process exited with code ${code} and signal ${signal}.`);
-            mapitProcess.exitCode = code; // Store for later use in stdout.on('end')
+            mapitProcess.exitCode = code;
         });
 
         mapitProcess.stdout.on('end', () => {
@@ -241,184 +269,118 @@ SIGN OFF
             gsProcess.stdin.end();
         });
 
-        // mapitProcess.on('close') remains mostly for logging mapit's own exit,
-        // the primary response logic is now in mapitProcess.stdout.on('end')
         mapitProcess.on('close', (mapitCode) => {
             console.log(`mapit process stream closed, exit code ${mapitCode}.`);
             if (mapitStderrDataCollector) {
                 console.log(`--- Full mapit stderr START ---\n${mapitStderrDataCollector}\n--- Full mapit stderr END ---`);
             }
-            if (mapitCode !== 0 && mapitOutput.length === 0) { // If mapit failed AND produced no output
+            if (mapitCode !== 0 && mapitOutput.length === 0) {
                 console.error(`Error: mapit process exited with code ${mapitCode} and produced no output.`);
                 if (!res.headersSent && !res.writableEnded) {
                     res.status(500).json({ error: `Error: mapit process exited with code ${mapitCode} and produced no output. Stderr: ${mapitStderrDataCollector || 'No stderr output from mapit.'}`});
                 }
             }
-            // If mapit has output, the stdout.on('end') handler for mapit takes care of GS and response.
         });
 
         console.log('Writing dip output to mapit stdin.');
-        mapitProcess.stdin.write(dipStdoutData);
+        mapitProcess.stdin.write(dipResult.stdout);
         mapitProcess.stdin.end();
-    });
 
-    console.log('Attempting to write to dip stdin:\n---START DIP STDIN---\n' + dipStdinDynamicContent + '---END DIP STDIN---');
-    const writeSuccessful = dipProcess.stdin.write(dipStdinDynamicContent);
-    if (writeSuccessful) {
-        dipProcess.stdin.end();
-        console.log('Successfully wrote to dip stdin and closed it.');
-    } else {
-        console.warn('dipProcess.stdin.write returned false (kernel buffer full). Waiting for drain event.');
-        dipProcess.stdin.once('drain', () => {
-            console.log('dipProcess.stdin drained. Now ending stdin.');
-            dipProcess.stdin.end();
-        });
+    } catch (dipError) {
+        console.error('Failed to execute dip process for /generate-map:', dipError);
+        if (!res.headersSent && !res.writableEnded) {
+            return res.status(500).json({ error: dipError.error || 'Error executing dip process.', stderr: dipError.stderr });
+        }
     }
 });
 
 // API endpoint to execute DIP commands
-app.post('/api/execute-dip-command', (req, res) => {
+app.post('/api/execute-dip-command', async (req, res) => {
     console.log('Received request to /api/execute-dip-command');
-    const { commandBlock, email, subject, gameName } = req.body; // gameName is also available from body
+    const { commandBlock, email, subject, gameName } = req.body;
 
     if (!commandBlock || !email || !subject) {
         return res.status(400).json({ error: 'Missing commandBlock, email, or subject in request body.' });
     }
 
-    console.log(`Raw cookies received: ${req.headers.cookie}`); // Log the entire cookie string
+    console.log(`Raw cookies received: ${req.headers.cookie}`);
     const playerPowerCookie = req.cookies.machHelperPlayerPower;
     console.log(`Player Power Cookie (parsed): ${playerPowerCookie}`);
 
-    // Construct the input for the dip CLI
-    // This is similar to /generate-map but uses the provided commandBlock
-    // and doesn't necessarily need the "SIGNON/SIGNOFF" if commandBlock already includes it.
-    // The frontend script.js currently wraps SIGNON/SIGNOFF around existingCommands.
     const dipStdinContent = `FROM: ${email}
 TO: ${DIP_TO_EMAIL}
 Subject: ${subject}
 Date: ${new Date().toUTCString()}
 
 ${commandBlock}
-`; // Note: Frontend already adds SIGNON and SIGNOFF
+`;
 
-    console.log(`Spawning dip process for command execution: ${DIP_CLI_PATH} ${DIP_CLI_ARGS.join(' ')} with CWD: ${DIP_CLI_CWD}`);
-    const dipProcess = spawn(DIP_CLI_PATH, DIP_CLI_ARGS, { cwd: DIP_CLI_CWD });
-
-    let dipStdoutData = '';
-    let dipStderrData = '';
-
-    dipProcess.stdin.on('error', (err) => {
-        console.error('ERROR on dipProcess.stdin for command execution:', err);
-        if (!res.headersSent && !res.writableEnded) {
-            res.status(500).json({ error: `Error writing to dip process stdin: ${err.message}`, stderr: dipStderrData });
-        }
-    });
-
-    dipProcess.stdout.on('data', (data) => {
-        dipStdoutData += data.toString();
-    });
-
-    dipProcess.stderr.on('data', (data) => {
-        const errChunk = data.toString();
-        console.error(`dip stderr chunk (command execution): ${errChunk}`);
-        dipStderrData += errChunk;
-    });
-
-    dipProcess.on('error', (spawnError) => {
-        console.error('Failed to start dip process for command execution (spawn error):', spawnError);
-        if (!res.headersSent && !res.writableEnded) {
-            return res.status(500).json({ error: `Error: Failed to start dip process. ${spawnError.message}`, stderr: dipStderrData });
-        }
-    });
-
-    dipProcess.on('close', (dipCode) => {
-        console.log(`dip process (command execution) stream closed, exit code ${dipCode}.`);
-        if (dipStderrData) {
-            console.log(`--- Full dip stderr (command execution) START ---\n${dipStderrData}\n--- Full dip stderr (command execution) END ---`);
-        }
+    try {
+        const primaryDipResult = await spawnDipProcess(dipStdinContent);
 
         if (res.headersSent || res.writableEnded) {
-            console.log('Response already sent for /api/execute-dip-command');
+            console.log('Response already sent for /api/execute-dip-command before processing primary dip result.');
             return;
         }
 
-        if (dipCode === 0) {
-            console.log('dip command execution successful. Stdout:\n', dipStdoutData);
-            // Primary command successful, now check for master player and run secondary command
-            if (playerPowerCookie === 'M') {
-                console.log('Master player detected (playerPower=M). Executing secondary dip command.');
-                const secondaryDipArgs = ['-C', DIP_CLI_CWD, '-x']; // Align with -C flag usage
-                const commandString = `${DIP_CLI_PATH} ${secondaryDipArgs.join(' ')}`;
-                console.log(`Spawning secondary dip process with bash shell: ${commandString} with CWD: ${DIP_CLI_CWD}`);
-                const secondaryDipProcess = spawn(commandString, [], { cwd: DIP_CLI_CWD, shell: '/bin/bash' });
-
-                let secondaryDipStdout = '';
-                let secondaryDipStderr = '';
-
-                secondaryDipProcess.stdout.on('data', (data) => {
-                    secondaryDipStdout += data.toString();
-                });
-                secondaryDipProcess.stderr.on('data', (data) => {
-                    secondaryDipStderr += data.toString();
-                });
-                secondaryDipProcess.on('error', (spawnError) => {
-                    console.error('Failed to start secondary dip process (spawn error):', spawnError);
-                    // Still send primary response, but indicate secondary process error
-                    if (!res.headersSent && !res.writableEnded) {
-                        res.json({
-                            stdout: dipStdoutData,
-                            stderr: dipStderrData,
-                            secondaryError: `Failed to start secondary process: ${spawnError.message}`
-                        });
-                    }
-                });
-                secondaryDipProcess.on('close', (secDipCode) => {
-                    console.log(`Secondary dip process exited with code ${secDipCode}.`);
-                    if (secondaryDipStdout) {
-                        console.log(`Secondary dip stdout:\n${secondaryDipStdout}`);
-                    }
-                    if (secondaryDipStderr) {
-                        console.error(`Secondary dip stderr:\n${secondaryDipStderr}`);
-                    }
-                    // Send response including secondary process output
-                    if (!res.headersSent && !res.writableEnded) {
-                        res.json({
-                            stdout: dipStdoutData,
-                            stderr: dipStderrData,
-                            secondaryStdout: secondaryDipStdout,
-                            secondaryStderr: secondaryDipStderr,
-                            secondaryExitCode: secDipCode
-                        });
-                    }
-                });
-            } else {
-                // Not a master player, send only primary command output
-                if (!res.headersSent && !res.writableEnded) {
-                    res.json({ stdout: dipStdoutData, stderr: dipStderrData });
-                }
-            }
-        } else {
-            console.error(`Error: dip process (command execution) exited with code ${dipCode}.`);
-            res.status(500).json({
-                error: `dip process exited with code ${dipCode}.`,
+        if (!primaryDipResult.success) {
+            console.error(`Error: dip process (command execution) exited with code ${primaryDipResult.exitCode}.`);
+            return res.status(500).json({
+                error: `dip process exited with code ${primaryDipResult.exitCode}.`,
                 details: `Review server logs for more details. Game: ${gameName || 'N/A'}`,
-                stdout: dipStdoutData, // Include stdout even on error, might be useful
-                stderr: dipStderrData || 'No stderr output from dip.'
+                stdout: primaryDipResult.stdout,
+                stderr: primaryDipResult.stderr || 'No stderr output from dip.'
             });
         }
-    });
 
-    console.log('Attempting to write to dip stdin (command execution):\n---START DIP STDIN---\n' + dipStdinContent + '---END DIP STDIN---');
-    const writeSuccessful = dipProcess.stdin.write(dipStdinContent);
-    if (writeSuccessful) {
-        dipProcess.stdin.end();
-        console.log('Successfully wrote to dip stdin (command execution) and closed it.');
-    } else {
-        console.warn('dipProcess.stdin.write (command execution) returned false. Waiting for drain event.');
-        dipProcess.stdin.once('drain', () => {
-            console.log('dipProcess.stdin (command execution) drained. Now ending stdin.');
-            dipProcess.stdin.end();
-        });
+        console.log('dip command execution successful. Stdout:\n', primaryDipResult.stdout);
+        
+        if (playerPowerCookie === 'M') {
+            console.log('Master player detected (playerPower=M). Executing secondary dip command.');
+            // For the secondary command, the command *is* the path and args, executed via shell
+            // The `spawnDipProcess` expects DIP_CLI_PATH as the command, and then args.
+            // So we need to adjust how we call it or what it expects for shell commands.
+            // The original code was: spawn(commandString, [], { cwd: DIP_CLI_CWD, shell: '/bin/bash' });
+            // where commandString = `${DIP_CLI_PATH} ${secondaryDipArgs.join(' ')}`
+            // Let's make `spawnDipProcess` handle this by passing the full command string as `DIP_CLI_PATH` when `useShell` is true.
+            // This is a slight deviation but keeps the function signature cleaner.
+            // OR, more cleanly, the `spawn` function's first argument is the command, and second is args.
+            // When shell is true, the first argument is the *entire command string*.
+            // So, we can pass DIP_CLI_PATH as command, and secondaryDipArgs as args, and set useShell to true.
+            // The original code `spawn(commandString, [], {shell: true})` is equivalent to `spawn(DIP_CLI_PATH, secondaryDipArgs, {shell: true})`
+            // if `commandString` was just `DIP_CLI_PATH` and args were `secondaryDipArgs`.
+            // The original code was `spawn(DIP_CLI_PATH + " " + secondaryDipArgs.join(' '), [], {shell: true})`
+            // This is not quite right. If shell is true, the first arg is the command to run *in the shell*.
+            // Let's stick to the original: `spawn(DIP_CLI_PATH, secondaryDipArgs, { cwd: DIP_CLI_CWD, shell: '/bin/bash' })`
+            // So, `customArgs` will be `secondaryDipArgs`, and `useShell` will be `true`.
+            
+            const secondaryDipArgs = ['-C', DIP_CLI_CWD, '-x']; // Original args for the secondary command
+            // No stdin for the secondary command as per original logic
+            const secondaryDipResult = await spawnDipProcess("", secondaryDipArgs, DIP_CLI_CWD, true);
+
+
+            if (!res.headersSent && !res.writableEnded) {
+                res.json({
+                    stdout: primaryDipResult.stdout,
+                    stderr: primaryDipResult.stderr,
+                    secondaryStdout: secondaryDipResult.stdout,
+                    secondaryStderr: secondaryDipResult.stderr,
+                    secondaryExitCode: secondaryDipResult.exitCode,
+                    secondarySuccess: secondaryDipResult.success
+                });
+            }
+        } else {
+            // Not a master player, send only primary command output
+            if (!res.headersSent && !res.writableEnded) {
+                res.json({ stdout: primaryDipResult.stdout, stderr: primaryDipResult.stderr, success: primaryDipResult.success, exitCode: primaryDipResult.exitCode });
+            }
+        }
+
+    } catch (dipError) {
+        console.error('Failed to execute dip process for /api/execute-dip-command:', dipError);
+        if (!res.headersSent && !res.writableEnded) {
+            return res.status(500).json({ error: dipError.error || 'Error executing dip process.', stderr: dipError.stderr });
+        }
     }
 });
 
