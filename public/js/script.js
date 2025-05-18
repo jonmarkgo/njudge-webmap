@@ -1,15 +1,15 @@
 document.addEventListener('DOMContentLoaded', () => {
     // --- DATA ---
     const powers = [
-        { name: "Austria", letter: "A", homeProvinces: ["AUS", "CRI", "HUN", "TYR"] },
-        { name: "France", letter: "F", homeProvinces: ["AVI", "MAR", "PRO", "SWI"] },
-        { name: "Florence", letter: "L", homeProvinces: ["ARE", "FLO", "PSA"] },
-        { name: "Milan", letter: "I", homeProvinces: ["COM", "CRE", "FOR", "MIL", "PAR", "PAV"] },
-        { name: "Naples", letter: "N", homeProvinces: ["AQU", "BAR", "CAP", "MES", "NAP", "OTR", "PAL", "SLR"] },
-        { name: "Papacy", letter: "P", homeProvinces: ["ANC", "BOL", "PAT", "PER", "RME", "SPO", "URB"] },
-        { name: "Turkey", letter: "T", homeProvinces: ["ALB", "BOS", "DUR", "HER", "TUN"] },
-        { name: "Venice", letter: "V", homeProvinces: ["BER", "BRE", "DAL", "FRI", "IST", "PAD", "TRV", "VEN", "VER", "VIC"] },
-        { name: "Master", letter: "M", homeProvinces: [] }
+        { name: "Austria", letter: "A" },
+        { name: "France", letter: "F" },
+        { name: "Florence", letter: "L" },
+        { name: "Milan", letter: "I" },
+        { name: "Naples", letter: "N" },
+        { name: "Papacy", letter: "P" },
+        { name: "Turkey", letter: "T" },
+        { name: "Venice", letter: "V" },
+        { name: "Master", letter: "M" }
     ];
 
     const multiCoastalProvinces = {
