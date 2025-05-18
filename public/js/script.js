@@ -1,4 +1,3 @@
-// public/js/script.js
 document.addEventListener('DOMContentLoaded', () => {
     // --- DATA ---
     const powers = [
@@ -104,7 +103,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const copyCommandsButton = document.getElementById('copyCommandsButton');
     const clearCommandsButton = document.getElementById('clearCommandsButton');
     const executeCommandButton = document.getElementById('executeCommandButton');
-    const listGameStateButton = document.getElementById('listGameStateButton'); // Added this line
+    const listGameStateButton = document.getElementById('listGameStateButton');
     const cliOutputBoxEl = document.getElementById('cliOutputBox');
 
     const refreshMapButton = document.getElementById('refreshMapButton');
@@ -117,7 +116,7 @@ document.addEventListener('DOMContentLoaded', () => {
         Cookies.set('machHelperGameName', gameNameEl.value, { expires: 30, path: '/', sameSite: 'Lax' });
         Cookies.set('machHelperPassword', passwordEl.value, { expires: 30, path: '/', sameSite: 'Lax' });
         Cookies.set('machHelperPlayerPower', playerPowerEl.value, { expires: 30, path: '/', sameSite: 'Lax' });
-        Cookies.set('machHelperPlayerEmail', playerEmailEl.value, { expires: 30, path: '/', sameSite: 'Lax' }); // Added for email
+        Cookies.set('machHelperPlayerEmail', playerEmailEl.value, { expires: 30, path: '/', sameSite: 'Lax' });
         alert('Game info saved!');
     }
 
@@ -125,23 +124,23 @@ document.addEventListener('DOMContentLoaded', () => {
         const savedGameName = Cookies.get('machHelperGameName');
         const savedPassword = Cookies.get('machHelperPassword');
         const savedPlayerPower = Cookies.get('machHelperPlayerPower');
-        const savedPlayerEmail = Cookies.get('machHelperPlayerEmail'); // Added for email
+        const savedPlayerEmail = Cookies.get('machHelperPlayerEmail');
 
         if (savedGameName) gameNameEl.value = savedGameName;
         if (savedPassword) passwordEl.value = savedPassword;
         if (savedPlayerPower) playerPowerEl.value = savedPlayerPower;
-        if (savedPlayerEmail) playerEmailEl.value = savedPlayerEmail; // Added for email
+        if (savedPlayerEmail) playerEmailEl.value = savedPlayerEmail;
     }
 
     function clearSavedGameSetup() {
         Cookies.remove('machHelperGameName', { path: '/' });
         Cookies.remove('machHelperPassword', { path: '/' });
         Cookies.remove('machHelperPlayerPower', { path: '/' });
-        Cookies.remove('machHelperPlayerEmail', { path: '/' }); // Added for email
-        gameNameEl.value = "machtest12345"; // Default back
+        Cookies.remove('machHelperPlayerEmail', { path: '/' });
+        gameNameEl.value = "machtest12345";
         passwordEl.value = "secret";
         playerPowerEl.value = "A";
-        if (playerEmailEl) playerEmailEl.value = ""; // Added for email
+        if (playerEmailEl) playerEmailEl.value = "";
         alert('Saved game info cleared!');
     }
 
@@ -169,7 +168,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const fullName = parts[0].trim();
                 const detailsAndAbbrsString = parts[1].trim();
                 const detailsAndAbbrs = detailsAndAbbrsString.split(/\s+/);
-                
+
                 const rawAbbrs = detailsAndAbbrs.slice(1);
                 const allAbbreviations = rawAbbrs.map(a => a.toUpperCase()).filter(a => a.length > 0);
                 const mainAbbr = allAbbreviations.length > 0 ? allAbbreviations[0] : fullName.substring(0, 3).toUpperCase();
@@ -209,7 +208,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function processAdjLine(line, provAbbr) {
         if (!provincesData[provAbbr] || !provincesData[provAbbr].adj) return;
-        const [_marker, typeAndAdjs] = line.split(':', 2); // Use _marker for unused part
+        const [_marker, typeAndAdjs] = line.split(':', 2);
         if (!typeAndAdjs) return;
         const adjs = typeAndAdjs.trim().split(/\s+/).map(a => a.toUpperCase().split('/')[0]);
 
@@ -347,7 +346,6 @@ document.addEventListener('DOMContentLoaded', () => {
             expenditureAmountEl.disabled = true;
             if(type === "famine relief") expenditureAmountEl.value = 3;
             if(type === "pacify rebellion") expenditureAmountEl.value = 12;
-           // if(type === "rebel_conquered") expenditureAmountEl.value = 9;
             if(type === "rebellion") expenditureAmountEl.value = 9;
         } else if (["counter-bribe", "disband_unit", "buy_unit"].includes(type)) {
             expTargetUnitTypeDivEl.classList.remove('hidden');
@@ -563,7 +561,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const signOnCommand = `SIGNON ${powerLetter}${game} ${pass} machiavelli`;
         const signOffCommand = "SIGNOFF";
-        
+
         let existingCommands = commandsAreaEl.value.trim();
         const fullCommandBlock = `${signOnCommand}\n${existingCommands ? existingCommands + '\n' : ''}${signOffCommand}`;
         commandsAreaEl.value = fullCommandBlock;
@@ -621,7 +619,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const signOnCommand = `SIGNON ${powerLetter}${game} ${pass} machiavelli`;
         const signOffCommand = "SIGNOFF";
-        
+
         const fullCommandBlock = `${signOnCommand}\n${existingCommands}\n${signOffCommand}`;
 
         cliOutputBoxEl.value = "Executing command... Please wait.";
@@ -636,7 +634,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     commandBlock: fullCommandBlock,
                     email: email,
                     subject: subject,
-                    gameName: game // Potentially useful for the backend
+                    gameName: game
                 }),
             });
 
@@ -647,39 +645,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 if(result.stderr) {
                     outputText += `\n\nStderr:\n${result.stderr}`;
                 }
-
-                // Display secondary command output if present
                 if (result.secondaryError) {
                     outputText += `\n\n--- Secondary Command ---\nError: ${result.secondaryError}`;
                 } else if (result.secondaryStdout || result.secondaryStderr) {
                     outputText += `\n\n--- Secondary Command (Exit Code: ${result.secondaryExitCode === undefined ? 'N/A' : result.secondaryExitCode}) ---`;
-                    if (result.secondaryStdout) {
-                        outputText += `\nStdout:\n${result.secondaryStdout}`;
-                    }
-                    if (result.secondaryStderr) {
-                        outputText += `\nStderr:\n${result.secondaryStderr}`;
-                    }
+                    if (result.secondaryStdout) outputText += `\nStdout:\n${result.secondaryStdout}`;
+                    if (result.secondaryStderr) outputText += `\nStderr:\n${result.secondaryStderr}`;
                 }
                 cliOutputBoxEl.value = outputText;
             } else {
                 let errorOutputText = `Execution failed: ${result.error || response.statusText}\n\nDetails:\n${result.details || ''}`;
-                if (result.stdout) { // Include primary stdout even on failure if available
-                    errorOutputText += `\n\nStdout (Primary):\n${result.stdout}`;
-                }
-                if (result.stderr) {
-                     errorOutputText += `\n\nStderr (Primary):\n${result.stderr}`;
-                }
-                // Also show secondary output/error if the primary failed but secondary was attempted and included in response
+                if (result.stdout) errorOutputText += `\n\nStdout (Primary):\n${result.stdout}`;
+                if (result.stderr) errorOutputText += `\n\nStderr (Primary):\n${result.stderr}`;
                 if (result.secondaryError) {
                     errorOutputText += `\n\n--- Secondary Command ---\nError: ${result.secondaryError}`;
                 } else if (result.secondaryStdout || result.secondaryStderr) {
                     errorOutputText += `\n\n--- Secondary Command (Exit Code: ${result.secondaryExitCode === undefined ? 'N/A' : result.secondaryExitCode}) ---`;
-                    if (result.secondaryStdout) {
-                        errorOutputText += `\nStdout:\n${result.secondaryStdout}`;
-                    }
-                    if (result.secondaryStderr) {
-                        errorOutputText += `\nStderr:\n${result.secondaryStderr}`;
-                    }
+                    if (result.secondaryStdout) errorOutputText += `\nStdout:\n${result.secondaryStdout}`;
+                    if (result.secondaryStderr) errorOutputText += `\nStderr:\n${result.secondaryStderr}`;
                 }
                 cliOutputBoxEl.value = errorOutputText;
             }
@@ -693,7 +676,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const game = gameNameEl.value.trim();
         const pass = passwordEl.value.trim();
         const powerLetter = playerPowerEl.value;
-        const email = playerEmailEl.value.trim(); // Email is needed for the API
+        const email = playerEmailEl.value.trim();
 
         if (!game || !pass || !powerLetter) {
             alert("Please fill in Game Name, Password, and Your Power in the Game Setup section.");
@@ -708,13 +691,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const powerDetails = powers.find(p => p.letter === powerLetter);
         const powerName = powerDetails ? powerDetails.name : powerLetter;
-        // Subject might not be strictly necessary for LIST but good to keep consistent with execute
         const subject = `DIP Web UI LIST: ${powerName} for ${game}`;
 
         const signOnCommand = `SIGNON ${powerLetter}${game} ${pass} machiavelli`;
-        const listCommand = `LIST ${game}`; // Changed to include game name
+        const listCommand = `LIST ${game}`;
         const signOffCommand = "SIGNOFF";
-        
+
         const fullCommandBlock = `${signOnCommand}\n${listCommand}\n${signOffCommand}`;
 
         cliOutputBoxEl.value = "Executing LIST command... Please wait.";
@@ -737,41 +719,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (response.ok) {
                 let listOutputText = `LIST command successful:\n\n${result.stdout || 'No output from command.'}`;
-                if(result.stderr) {
-                    listOutputText += `\n\nStderr:\n${result.stderr}`;
-                }
-                
-                // Display secondary command output if present (though less likely for LIST, good for consistency)
+                if(result.stderr) listOutputText += `\n\nStderr:\n${result.stderr}`;
                 if (result.secondaryError) {
                     listOutputText += `\n\n--- Secondary Command ---\nError: ${result.secondaryError}`;
                 } else if (result.secondaryStdout || result.secondaryStderr) {
                     listOutputText += `\n\n--- Secondary Command (Exit Code: ${result.secondaryExitCode === undefined ? 'N/A' : result.secondaryExitCode}) ---`;
-                    if (result.secondaryStdout) {
-                        listOutputText += `\nStdout:\n${result.secondaryStdout}`;
-                    }
-                    if (result.secondaryStderr) {
-                        listOutputText += `\nStderr:\n${result.secondaryStderr}`;
-                    }
+                    if (result.secondaryStdout) listOutputText += `\nStdout:\n${result.secondaryStdout}`;
+                    if (result.secondaryStderr) listOutputText += `\nStderr:\n${result.secondaryStderr}`;
                 }
                 cliOutputBoxEl.value = listOutputText;
             } else {
                 let listErrorOutputText = `LIST command failed: ${result.error || response.statusText}\n\nDetails:\n${result.details || ''}`;
-                 if (result.stdout) {
-                    listErrorOutputText += `\n\nStdout (Primary):\n${result.stdout}`;
-                }
-                if (result.stderr) {
-                     listErrorOutputText += `\n\nStderr (Primary):\n${result.stderr}`;
-                }
+                 if (result.stdout) listErrorOutputText += `\n\nStdout (Primary):\n${result.stdout}`;
+                if (result.stderr) listErrorOutputText += `\n\nStderr (Primary):\n${result.stderr}`;
                 if (result.secondaryError) {
                     listErrorOutputText += `\n\n--- Secondary Command ---\nError: ${result.secondaryError}`;
                 } else if (result.secondaryStdout || result.secondaryStderr) {
                     listErrorOutputText += `\n\n--- Secondary Command (Exit Code: ${result.secondaryExitCode === undefined ? 'N/A' : result.secondaryExitCode}) ---`;
-                    if (result.secondaryStdout) {
-                        listErrorOutputText += `\nStdout:\n${result.secondaryStdout}`;
-                    }
-                    if (result.secondaryStderr) {
-                        listErrorOutputText += `\nStderr:\n${result.secondaryStderr}`;
-                    }
+                    if (result.secondaryStdout) listErrorOutputText += `\nStdout:\n${result.secondaryStdout}`;
+                    if (result.secondaryStderr) listErrorOutputText += `\nStderr:\n${result.secondaryStderr}`;
                 }
                 cliOutputBoxEl.value = listErrorOutputText;
             }
@@ -792,55 +758,69 @@ document.addEventListener('DOMContentLoaded', () => {
             viewerInstance.destroy();
             viewerInstance = null;
         }
-        
-        // Ensure mapContainerDiv has the img placeholder
+
         mapContainerDiv.innerHTML = '<div id="my-container" class="ng-scope pngobject-container" style="width:100%;">' +
                                     '<img src="" alt="Game Map" style="width:100%;height:auto;min-height:500px;object-fit:contain;display:block;margin:auto;" />' +
                                     '</div>';
         const imgElement = mapContainerDiv.querySelector('img');
 
-
         try {
-            // Pass gameName to the backend if available from the input field
             const currentGameName = gameNameEl.value.trim();
             const fetchUrl = `/generate-map${currentGameName ? '?gameName=' + encodeURIComponent(currentGameName) : ''}&t=${new Date().getTime()}`;
-            
+
             const response = await fetch(fetchUrl);
             if (!response.ok) {
                 let errorData;
                 try {
-                    errorData = await response.json(); // Try to parse as JSON
+                    errorData = await response.json(); 
                 } catch (e) {
-                    errorData = { error: await response.text() }; // Fallback to text
+                    errorData = { error: await response.text() };
                 }
-                console.error('Map generation failed:', response.status, errorData);
-                throw new Error(`Map generation failed: ${response.status}. Server: ${errorData.error || 'Unknown error'}. Details: ${errorData.details || ''}. Stderr: ${errorData.stderr || ''}`);
+                console.error('Map generation/fetch failed:', response.status, errorData);
+                let errorMsg = `Map request failed: ${response.status}. Server: ${errorData.error || 'Unknown error'}.`;
+                if(errorData.details) errorMsg += ` Details: ${errorData.details}.`;
+                if(errorData.stderr) errorMsg += ` Stderr: ${errorData.stderr}.`;
+                if(errorData.type) errorMsg += ` Type: ${errorData.type}.`;
+                throw new Error(errorMsg);
             }
             const json = await response.json();
             if (!json.image) {
-                throw new Error('Map generation failed: No image data in response.');
+                throw new Error('Map request failed: No image data in response.');
             }
             const base64Url = 'data:image/png;base64,' + json.image;
-            
+
             if (imgElement) {
                 imgElement.src = base64Url;
-                viewerInstance = new Viewer(imgElement, {
-                    inline: false,
-                    toolbar: {
-                        zoomIn: true, zoomOut: true, oneToOne: true, reset: true,
-                        prev: false, play: false, next: false,
-                        rotateLeft: true, rotateRight: true,
-                        flipHorizontal: true, flipVertical: true,
-                    },
-                });
+                if (typeof Viewer !== 'undefined') {
+                    viewerInstance = new Viewer(imgElement, {
+                        inline: false,
+                        toolbar: {
+                            zoomIn: true, zoomOut: true, oneToOne: true, reset: true,
+                            prev: false, play: false, next: false,
+                            rotateLeft: true, rotateRight: true,
+                            flipHorizontal: true, flipVertical: true,
+                        },
+                    });
+                } else {
+                    console.warn("Viewer.js not loaded, zoom/pan will not be available.");
+                }
             }
-            mapStatusEl.textContent = 'Map loaded. Click map to zoom/pan. Refreshed: ' + new Date().toLocaleTimeString();
-            mapStatusEl.classList.remove('text-info');
+
+            let statusMessage = `Map loaded (Game: ${json.gameName || 'N/A'}, Phase: ${json.phase || 'N/A'}). `;
+            if (json.source === 'cache') {
+                statusMessage += 'Served from cache. ';
+            } else if (json.source === 'generated') {
+                statusMessage += 'Newly generated and cached. ';
+            }
+            statusMessage += 'Refreshed: ' + new Date().toLocaleTimeString();
+            mapStatusEl.textContent = statusMessage;
+            mapStatusEl.classList.remove('text-info', 'text-danger');
+
         } catch (error) {
             console.error('Error fetching or displaying map:', error);
             mapStatusEl.textContent = 'Error: ' + error.message;
             mapStatusEl.classList.add('text-danger');
-            if (imgElement) imgElement.src = ""; // Clear image on error
+            if (imgElement) imgElement.src = "";
         } finally {
             refreshMapButton.disabled = false;
         }
@@ -849,19 +829,18 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- INITIALIZATION ---
     async function initializeApp() {
         try {
-            loadGameSetup(); // Load game name from cookie first
+            loadGameSetup();
 
             const response = await fetch('/api/map-file-data');
             if (!response.ok) {
                 throw new Error('Failed to load map file data: ' + response.statusText);
             }
             const mapDataText = await response.text();
-            
+
             parseMapMachiavelliData(mapDataText);
             populateProvinceDropdowns();
             populatePowerDropdowns();
 
-            // Trigger change events to set initial UI state
             if (orderTypeEl) orderTypeEl.dispatchEvent(new Event('change'));
             if (supportedUnitTypeEl) supportedUnitTypeEl.dispatchEvent(new Event('change'));
             if (adjustmentOrderActionEl) adjustmentOrderActionEl.dispatchEvent(new Event('change'));
@@ -870,7 +849,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (removeUnitTypeEl) removeUnitTypeEl.dispatchEvent(new Event('change'));
             if (expenditureTypeEl) expenditureTypeEl.dispatchEvent(new Event('change'));
             if (loanPayTypeEl) loanPayTypeEl.dispatchEvent(new Event('change'));
-            
+
             const provinceDropdownsForChosen = [
                 unitLocationEl, moveTargetProvinceEl, supportedUnitLocationEl,
                 supportedMoveTargetProvinceEl, convoyedArmyLocationEl, convoyedArmyTargetProvinceEl,
@@ -879,17 +858,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
             provinceDropdownsForChosen.forEach(selectEl => {
                 if (selectEl && typeof $.fn.chosen !== 'undefined') {
-                    $(selectEl).chosen({
-                        search_contains: true,
-                        width: "100%"
-                    });
+                    $(selectEl).chosen({ search_contains: true, width: "100%" });
                 }
             });
             mapStatusEl.textContent = 'Map not yet loaded. Click "Refresh Map".';
-            // Automatically refresh map on load if a game name is set
-            // if (gameNameEl.value) {
-            //     refreshMapButton.click();
-            // }
+            if (gameNameEl.value && refreshMapButton) { // Auto-refresh if game name is present
+                refreshMapButton.click();
+            }
 
         } catch (error) {
             console.error("Error initializing application:", error);

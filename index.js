@@ -1,15 +1,16 @@
-// server.js
 const express = require('express');
 const { spawn } = require('child_process');
 const path = require('path');
-const fs = require('fs');
-const cookieParser = require('cookie-parser'); // Added cookie-parser
+const fs = require('fs').promises; // Use promise version for async/await
+const fsSync = require('fs'); // For synchronous checks like existsSync and mkdirSync
+const cookieParser = require('cookie-parser');
 
 const app = express();
 const port = 3000;
 
 // --- Configuration ---
-const MAP_DATA_FILE_PATH = '/home/judge/data/map.machiavelli'; // For the new API endpoint
+const MAP_DATA_FILE_PATH = '/home/judge/data/map.machiavelli';
+const CACHED_MAPS_DIR = path.join(__dirname, 'cached_maps');
 
 const DIP_CLI_PATH = '/home/judge/dip';
 const DIP_CLI_ARGS = ['-C', '/home/judge', '-w'];
@@ -21,8 +22,19 @@ const MAPINFO_ENV_VAR = '/home/judge/flocscripts/mapit/maps/Machiavelli.info';
 
 const DIP_FROM_EMAIL = "me@jonmarkgo.com";
 const DIP_TO_EMAIL = "jonmarkgodiplomacyadjudicator@gmail.com";
-const DIP_SUBJECT = "map";
+const DIP_SUBJECT = "map"; // Default subject, can be overridden
 // --- End Configuration ---
+
+// Ensure cache directory exists
+if (!fsSync.existsSync(CACHED_MAPS_DIR)) {
+    try {
+        fsSync.mkdirSync(CACHED_MAPS_DIR, { recursive: true });
+        console.log(`Created cache directory: ${CACHED_MAPS_DIR}`);
+    } catch (err) {
+        console.error(`Failed to create cache directory ${CACHED_MAPS_DIR}:`, err);
+        // Depending on severity, you might want to exit or handle this differently
+    }
+}
 
 // --- Shared DIP Process Spawner ---
 async function spawnDipProcess(stdinContent, customArgs = DIP_CLI_ARGS, customCwd = DIP_CLI_CWD, useShell = false) {
@@ -35,11 +47,9 @@ async function spawnDipProcess(stdinContent, customArgs = DIP_CLI_ARGS, customCw
 
         dipProcess.stdin.on('error', (err) => {
             console.error('ERROR on dipProcess.stdin:', err);
-            // Don't reject here, as the process might still exit and provide an exit code.
-            // The 'error' event on the process itself will handle spawn failures.
-            // However, if stdin write fails, it's a critical issue for this specific function.
-            if (!dipProcess.killed) dipProcess.kill(); // Attempt to kill if stdin fails critically
-            reject({ error: `Error writing to dip process stdin: ${err.message}`, stdout: stdoutData, stderr: stderrData, exitCode: null });
+            if (!dipProcess.killed) dipProcess.kill();
+            // Reject with an object structure consistent with other rejections
+            reject({ error: `Error writing to dip process stdin: ${err.message}`, stdout: stdoutData, stderr: stderrData, exitCode: null, type: 'dip_stdin_error' });
         });
 
         dipProcess.stdout.on('data', (data) => {
@@ -54,7 +64,7 @@ async function spawnDipProcess(stdinContent, customArgs = DIP_CLI_ARGS, customCw
 
         dipProcess.on('error', (spawnError) => {
             console.error('Failed to start dip process (spawn error):', spawnError);
-            reject({ error: `Failed to start dip process: ${spawnError.message}`, stdout: stdoutData, stderr: stderrData, exitCode: null });
+            reject({ error: `Failed to start dip process: ${spawnError.message}`, stdout: stdoutData, stderr: stderrData, exitCode: null, type: 'dip_spawn_error' });
         });
 
         dipProcess.on('close', (code, signal) => {
@@ -62,8 +72,6 @@ async function spawnDipProcess(stdinContent, customArgs = DIP_CLI_ARGS, customCw
             if (stderrData) {
                 console.log(`--- Full dip stderr START ---\n${stderrData}\n--- Full dip stderr END ---`);
             }
-            // 'close' is usually preferred over 'exit' for stdio streams.
-            // If code is null and signal is present, it means the process was killed by a signal.
             const exitCode = code === null && signal ? `signal ${signal}` : code;
             if (code !== 0) {
                 resolve({ stdout: stdoutData, stderr: stderrData, exitCode: exitCode, success: false });
@@ -71,7 +79,7 @@ async function spawnDipProcess(stdinContent, customArgs = DIP_CLI_ARGS, customCw
                 resolve({ stdout: stdoutData, stderr: stderrData, exitCode: exitCode, success: true });
             }
         });
-        
+
         console.log('Attempting to write to dip stdin:\n---START DIP STDIN---\n' + stdinContent + '---END DIP STDIN---');
         const writeSuccessful = dipProcess.stdin.write(stdinContent);
         if (writeSuccessful) {
@@ -88,45 +96,130 @@ async function spawnDipProcess(stdinContent, customArgs = DIP_CLI_ARGS, customCw
 }
 // --- End Shared DIP Process Spawner ---
 
+async function getGamePhase(gameName) {
+    console.log(`[getGamePhase] Getting phase for game: ${gameName}`);
+    if (!gameName) {
+        console.error('[getGamePhase] No gameName provided.');
+        throw new Error('Game name is required to get phase.');
+    }
+
+    const listCommand = `LIST ${gameName}`;
+    const dipStdinContent = `FROM: ${DIP_FROM_EMAIL}
+TO: ${DIP_TO_EMAIL}
+Subject: PhaseCheck for ${gameName}
+Date: ${new Date().toUTCString()}
+
+${listCommand}
+SIGN OFF
+`;
+
+    try {
+        const dipResult = await spawnDipProcess(dipStdinContent);
+        if (!dipResult.success) {
+            console.error(`[getGamePhase] dip process for LIST failed. Exit code: ${dipResult.exitCode}, Stderr: ${dipResult.stderr}`);
+            throw new Error(`Failed to get game phase. DIP LIST command failed: ${dipResult.stderr || 'Unknown error from dip LIST'}`);
+        }
+
+        const stdout = dipResult.stdout;
+        const phaseRegex = /Game '[^']+' order #\d+ \((F\d{4}[A-Z])\)/;
+        const match = stdout.match(phaseRegex);
+
+        if (match && match[1]) {
+            const phase = match[1];
+            console.log(`[getGamePhase] Extracted phase: ${phase} for game ${gameName}`);
+            return phase;
+        } else {
+            const deadlinePhaseRegex = /:: Deadline: (F\d{4}[A-Z])/;
+            const deadlineMatch = stdout.match(deadlinePhaseRegex);
+            if (deadlineMatch && deadlineMatch[1]) {
+                const phase = deadlineMatch[1];
+                console.log(`[getGamePhase] Extracted phase from deadline: ${phase} for game ${gameName}`);
+                return phase;
+            }
+            console.error(`[getGamePhase] Could not extract phase from LIST output for ${gameName}. Output snippet: ${stdout.substring(0, 500)}`);
+            throw new Error('Could not extract phase from LIST command output.');
+        }
+    } catch (error) {
+        console.error(`[getGamePhase] Error during LIST command execution or parsing for ${gameName}: ${error.message}`);
+        // Ensure the error is an instance of Error for consistent handling
+        if (error instanceof Error) {
+            throw error;
+        } else {
+            throw new Error(String(error.error || error.message || error));
+        }
+    }
+}
 
 // Serve static files from the 'public' directory
 app.use(express.static(path.join(__dirname, 'public')));
-
-// Middleware to parse JSON bodies
 app.use(express.json());
-app.use(cookieParser()); // Use cookie-parser middleware
+app.use(cookieParser());
 
-// API endpoint to serve the map.machiavelli data
 app.get('/api/map-file-data', (req, res) => {
-    fs.readFile(MAP_DATA_FILE_PATH, 'utf8', (err, data) => {
-        if (err) {
+    fs.readFile(MAP_DATA_FILE_PATH, 'utf8')
+        .then(data => res.type('text/plain').send(data))
+        .catch(err => {
             console.error(`Error reading map data file (${MAP_DATA_FILE_PATH}):`, err);
-            return res.status(500).send('Error reading map data file.');
-        }
-        res.type('text/plain').send(data);
-    });
+            res.status(500).send('Error reading map data file.');
+        });
 });
 
 app.get('/generate-map', async (req, res) => {
     console.log('Received request to /generate-map');
 
     const cookieGameName = req.cookies.machHelperGameName;
-    const requestedGameName = req.query.gameName || cookieGameName;
-    
-    let dipCoreCommand = "list machtest12345"; // Default
-    if (requestedGameName) {
-        dipCoreCommand = `list ${requestedGameName}`;
-        console.log(`Using gameName: ${requestedGameName}. DIP_CORE_COMMAND set to: "${dipCoreCommand}"`);
-    } else {
-        console.log(`No gameName. Using default DIP_CORE_COMMAND: "${dipCoreCommand}"`);
+    const requestedGameName = req.query.gameName || cookieGameName || "machtest12345";
+
+    let currentPhase;
+    try {
+        currentPhase = await getGamePhase(requestedGameName);
+    } catch (phaseError) {
+        console.error(`Failed to get game phase for ${requestedGameName}: ${phaseError.message}`);
+        return res.status(500).json({
+            error: `Failed to determine game phase for "${requestedGameName}"`,
+            details: phaseError.message,
+            type: 'phase_error'
+        });
     }
 
-    const now = new Date();
-    const dateString = now.toUTCString();
+    const gameSpecificCacheDir = path.join(CACHED_MAPS_DIR, requestedGameName);
+    const cachedImageFileName = `${currentPhase}.png`;
+    const cachedImagePath = path.join(gameSpecificCacheDir, cachedImageFileName);
+
+    try {
+        // Ensure the game-specific cache directory exists
+        if (!fsSync.existsSync(gameSpecificCacheDir)) {
+            try {
+                await fs.mkdir(gameSpecificCacheDir, { recursive: true });
+                console.log(`Created game-specific cache directory: ${gameSpecificCacheDir}`);
+            } catch (mkdirError) {
+                console.error(`Failed to create game-specific cache directory ${gameSpecificCacheDir}:`, mkdirError);
+                // Decide if we should throw or try to proceed without caching for this request
+                // For now, let's log and proceed; map generation will occur, just not caching.
+            }
+        }
+
+        if (fsSync.existsSync(cachedImagePath)) {
+            console.log(`Cache hit: Found ${cachedImagePath} for phase ${currentPhase}, game ${requestedGameName}.`);
+            const imageBuffer = await fs.readFile(cachedImagePath);
+            const base64Png = imageBuffer.toString('base64');
+            return res.json({
+                image: base64Png,
+                source: 'cache',
+                phase: currentPhase,
+                gameName: requestedGameName
+            });
+        }
+        console.log(`Cache miss: ${cachedImagePath} not found for phase ${currentPhase}, game ${requestedGameName}. Generating new map.`);
+    } catch (cacheReadError) {
+        console.error(`Error accessing or reading cached image ${cachedImagePath}: ${cacheReadError.message}. Proceeding to generate.`);
+    }
+
+    const dipCoreCommand = `list ${requestedGameName}`;
     const dipStdinDynamicContent = `FROM: ${DIP_FROM_EMAIL}
 TO: ${DIP_TO_EMAIL}
-Subject: ${DIP_SUBJECT}
-Date: ${dateString}
+Subject: ${DIP_SUBJECT} (MapGen for ${requestedGameName} - ${currentPhase})
+Date: ${new Date().toUTCString()}
 
 ${dipCoreCommand}
 SIGN OFF
@@ -136,165 +229,105 @@ SIGN OFF
         const dipResult = await spawnDipProcess(dipStdinDynamicContent);
 
         if (!dipResult.success) {
-            console.error(`Error: dip process exited with code ${dipResult.exitCode}. Stderr: ${dipResult.stderr}`);
-            if (!res.headersSent && !res.writableEnded) {
-                return res.status(500).json({ error: `Error: dip process exited with code ${dipResult.exitCode}.`, stderr: dipResult.stderr || 'No stderr output from dip.' });
-            }
-            return;
+            throw { // Throw an object to be caught by the outer catch
+                type: 'dip_mapgen_error',
+                error: `dip process for map generation exited with code ${dipResult.exitCode}.`,
+                stderr: dipResult.stderr || 'No stderr output from dip.',
+                details: `Game: ${requestedGameName}, Phase: ${currentPhase}`
+            };
         }
-        
-        console.log('dip stdout (will be mapit stdin):\n---START DIP STDOUT---\n' + dipResult.stdout + '\n---END DIP STDOUT---');
 
-        const mapitEnv = {
-            ...process.env,
-            MAPPS: MAPPS_ENV_VAR,
-            MAPINFO: MAPINFO_ENV_VAR,
-        };
+        console.log('dip stdout (will be mapit stdin):\n---START DIP STDOUT---\n' + dipResult.stdout.substring(0, 500) + '...\n---END DIP STDOUT---');
 
-        console.log('Spawning mapit with environment:', mapitEnv);
+        const mapitEnv = { ...process.env, MAPPS: MAPPS_ENV_VAR, MAPINFO: MAPINFO_ENV_VAR };
         const mapitProcess = spawn(MAPIT_CLI_PATH, [], { env: mapitEnv });
 
         let mapitOutput = Buffer.alloc(0);
         let mapitStderrDataCollector = '';
 
-        mapitProcess.stdin.on('error', (err) => {
-            console.error('ERROR on mapitProcess.stdin:', err);
-            if (!res.headersSent && !res.writableEnded) {
-                res.status(500).json({ error: `Error writing to mapit process stdin: ${err.message}` });
-            }
-        });
-
-        mapitProcess.stdout.on('data', (data) => {
-            mapitOutput = Buffer.concat([mapitOutput, data]);
-        });
-        
+        mapitProcess.stdout.on('data', (data) => mapitOutput = Buffer.concat([mapitOutput, data]));
         mapitProcess.stderr.on('data', (data) => {
             const errChunk = data.toString();
             console.log(`mapit stderr: ${errChunk}`);
             mapitStderrDataCollector += errChunk;
         });
 
-        mapitProcess.on('error', (spawnError) => {
-            console.error('Failed to start mapit process (spawn error):', spawnError);
-            if (!res.headersSent && !res.writableEnded) {
-                res.status(500).json({ error: `Error: Failed to start mapit process. ${spawnError.message}` });
-            } else if (!res.writableEnded) {
-                res.destroy(new Error(`Failed to start mapit process. ${spawnError.message}`));
-            }
-        });
+        await new Promise((resolveMapit, rejectMapit) => {
+            mapitProcess.on('error', (spawnError) => rejectMapit({ type: 'mapit_spawn', error: `Failed to start mapit process: ${spawnError.message}` }));
+            mapitProcess.stdin.on('error', (err) => rejectMapit({ type: 'mapit_stdin', error: `Error writing to mapit stdin: ${err.message}` }));
 
-        mapitProcess.on('exit', (code, signal) => {
-            console.log(`mapit process exited with code ${code} and signal ${signal}.`);
-            mapitProcess.exitCode = code;
-        });
-
-        mapitProcess.stdout.on('end', () => {
-            console.log('mapit process stdout stream ended. Total PostScript data length:', mapitOutput.length);
-            if (mapitOutput.length === 0) {
-                console.error('Error: mapit produced no output.');
-                if (res.headersSent) {
-                    console.error('mapitOutput.on(end): Headers already sent, cannot send mapit error.');
-                    return;
-                }
-                res.setHeader('Content-Type', 'application/json');
-                if (mapitProcess.exitCode !== 0) {
-                     res.status(500).json({
-                        error: 'mapit produced no output and exited with an error.',
-                        details: `mapit process exited with code ${mapitProcess.exitCode}.`,
-                        stderr: mapitStderrDataCollector || 'No stderr output from mapit.'
-                    });
-                } else {
-                    res.status(500).json({
-                        error: 'mapit produced no output.',
-                        details: 'mapit process completed successfully but produced no data.',
-                        stderr: mapitStderrDataCollector || 'No stderr output from mapit.'
+            mapitProcess.on('close', async (mapitCode) => {
+                console.log(`mapit process closed, code ${mapitCode}. Stderr: ${mapitStderrDataCollector}`);
+                if (mapitCode !== 0 || mapitOutput.length === 0) {
+                    return rejectMapit({
+                        type: 'mapit_execution',
+                        error: 'mapit process failed or produced no output.',
+                        details: `mapit code ${mapitCode}, output length ${mapitOutput.length}.`,
+                        stderr: mapitStderrDataCollector
                     });
                 }
-                return;
-            }
 
-            const gsArgs = ['-q', '-sDEVICE=pngalpha', '-r300', '-dSAFER', '-o', '-', '-'];
-            console.log('Spawning Ghostscript process: gs', gsArgs.join(' '));
-            const gsProcess = spawn('gs', gsArgs);
+                const gsArgs = ['-q', '-sDEVICE=pngalpha', '-r300', '-dSAFER', '-o', '-', '-'];
+                const gsProcess = spawn('gs', gsArgs);
+                let gsOutput = Buffer.alloc(0);
+                let gsStderrData = '';
 
-            let gsStderrData = '';
-            let gsOutput = Buffer.alloc(0);
-            gsProcess.stderr.on('data', (data) => {
-                const errChunk = data.toString();
-                console.error(`gs stderr chunk: ${errChunk}`);
-                gsStderrData += errChunk;
-            });
-            gsProcess.stdout.on('data', (data) => {
-                gsOutput = Buffer.concat([gsOutput, data]);
-            });
+                gsProcess.stdout.on('data', (data) => gsOutput = Buffer.concat([gsOutput, data]));
+                gsProcess.stderr.on('data', (data) => {
+                    const errChunk = data.toString();
+                    console.error(`gs stderr: ${errChunk}`);
+                    gsStderrData += errChunk;
+                });
+                gsProcess.stdin.on('error', (err) => rejectMapit({ type: 'gs_stdin', error: `Error writing to gs stdin: ${err.message}` }));
 
-            gsProcess.on('close', (gsCode) => {
-                console.log(`Ghostscript process stream closed, exit code ${gsCode}.`);
-                if (gsStderrData) {
-                    console.log(`--- Full gs stderr START ---\n${gsStderrData}\n--- Full gs stderr END ---`);
-                }
-                if (res.headersSent) {
-                    console.error('gsProcess close: Headers already sent.');
-                    if (!res.writableEnded) res.end();
-                    return;
-                }
-                if (gsCode === 0 && gsOutput.length >= 8 && gsOutput.slice(0, 8).toString('hex') === '89504e470d0a1a0a') {
-                    const base64Png = gsOutput.toString('base64');
-                    res.setHeader('Content-Type', 'application/json');
-                    res.json({ image: base64Png });
-                } else {
-                    res.setHeader('Content-Type', 'application/json');
-                    const errorMessage = `Ghostscript error. Code: ${gsCode}. Output was not a valid PNG or output was empty.`;
-                    console.error(errorMessage + ' Stderr: ' + (gsStderrData || 'N/A'));
-                    res.status(500).json({
-                        error: 'Ghostscript did not produce a valid PNG.',
-                        details: `Ghostscript process exited with code ${gsCode}. Output length: ${gsOutput.length}.`,
-                        stderr: gsStderrData || 'No stderr output from Ghostscript.',
-                        gsOutputPreview: gsOutput.slice(0, 100).toString()
-                    });
-                }
+                gsProcess.on('close', async (gsCode) => {
+                    console.log(`gs process closed, code ${gsCode}. Stderr: ${gsStderrData}`);
+                    if (gsCode === 0 && gsOutput.length >= 8 && gsOutput.slice(0, 8).toString('hex') === '89504e470d0a1a0a') {
+                        try {
+                            await fs.writeFile(cachedImagePath, gsOutput);
+                            console.log(`Saved generated map to cache: ${cachedImagePath}`);
+                        } catch (writeError) {
+                            console.error(`Error saving map to cache ${cachedImagePath}: ${writeError.message}`);
+                        }
+                        res.json({
+                            image: gsOutput.toString('base64'),
+                            source: 'generated',
+                            phase: currentPhase,
+                            gameName: requestedGameName
+                        });
+                        resolveMapit();
+                    } else {
+                        rejectMapit({
+                            type: 'gs_execution',
+                            error: 'Ghostscript did not produce a valid PNG.',
+                            details: `gs code ${gsCode}, output length ${gsOutput.length}.`,
+                            stderr: gsStderrData,
+                            gsOutputPreview: gsOutput.slice(0, 100).toString()
+                        });
+                    }
+                });
+                gsProcess.stdin.write(mapitOutput);
+                gsProcess.stdin.end();
             });
-            
-            gsProcess.stdin.on('error', (err) => {
-                console.error('ERROR on gsProcess.stdin:', err);
-                if (!res.headersSent && !res.writableEnded) {
-                    res.setHeader('Content-Type', 'application/json');
-                    res.status(500).json({ error: 'Error writing to Ghostscript process stdin.', details: err.message });
-                }
-                if (!gsProcess.killed) gsProcess.kill();
-            });
-
-            console.log('Piping mapit output to Ghostscript stdin.');
-            gsProcess.stdin.write(mapitOutput);
-            gsProcess.stdin.end();
+            mapitProcess.stdin.write(dipResult.stdout);
+            mapitProcess.stdin.end();
         });
 
-        mapitProcess.on('close', (mapitCode) => {
-            console.log(`mapit process stream closed, exit code ${mapitCode}.`);
-            if (mapitStderrDataCollector) {
-                console.log(`--- Full mapit stderr START ---\n${mapitStderrDataCollector}\n--- Full mapit stderr END ---`);
-            }
-            if (mapitCode !== 0 && mapitOutput.length === 0) {
-                console.error(`Error: mapit process exited with code ${mapitCode} and produced no output.`);
-                if (!res.headersSent && !res.writableEnded) {
-                    res.status(500).json({ error: `Error: mapit process exited with code ${mapitCode} and produced no output. Stderr: ${mapitStderrDataCollector || 'No stderr output from mapit.'}`});
-                }
-            }
-        });
-
-        console.log('Writing dip output to mapit stdin.');
-        mapitProcess.stdin.write(dipResult.stdout);
-        mapitProcess.stdin.end();
-
-    } catch (dipError) {
-        console.error('Failed to execute dip process for /generate-map:', dipError);
+    } catch (processError) {
+        console.error('Error in map generation pipeline:', processError);
         if (!res.headersSent && !res.writableEnded) {
-            return res.status(500).json({ error: dipError.error || 'Error executing dip process.', stderr: dipError.stderr });
+            res.status(500).json({
+                error: processError.error || 'Map generation pipeline error.',
+                details: processError.details || (processError.message || 'No details'),
+                stderr: processError.stderr,
+                type: processError.type || 'unknown_pipeline_error',
+                gsOutputPreview: processError.gsOutputPreview
+            });
         }
     }
 });
 
-// API endpoint to execute DIP commands
+
 app.post('/api/execute-dip-command', async (req, res) => {
     console.log('Received request to /api/execute-dip-command');
     const { commandBlock, email, subject, gameName } = req.body;
@@ -303,10 +336,7 @@ app.post('/api/execute-dip-command', async (req, res) => {
         return res.status(400).json({ error: 'Missing commandBlock, email, or subject in request body.' });
     }
 
-    console.log(`Raw cookies received: ${req.headers.cookie}`);
     const playerPowerCookie = req.cookies.machHelperPlayerPower;
-    console.log(`Player Power Cookie (parsed): ${playerPowerCookie}`);
-
     const dipStdinContent = `FROM: ${email}
 TO: ${DIP_TO_EMAIL}
 Subject: ${subject}
@@ -334,30 +364,11 @@ ${commandBlock}
         }
 
         console.log('dip command execution successful. Stdout:\n', primaryDipResult.stdout);
-        
+
         if (playerPowerCookie === 'M') {
             console.log('Master player detected (playerPower=M). Executing secondary dip command.');
-            // For the secondary command, the command *is* the path and args, executed via shell
-            // The `spawnDipProcess` expects DIP_CLI_PATH as the command, and then args.
-            // So we need to adjust how we call it or what it expects for shell commands.
-            // The original code was: spawn(commandString, [], { cwd: DIP_CLI_CWD, shell: '/bin/bash' });
-            // where commandString = `${DIP_CLI_PATH} ${secondaryDipArgs.join(' ')}`
-            // Let's make `spawnDipProcess` handle this by passing the full command string as `DIP_CLI_PATH` when `useShell` is true.
-            // This is a slight deviation but keeps the function signature cleaner.
-            // OR, more cleanly, the `spawn` function's first argument is the command, and second is args.
-            // When shell is true, the first argument is the *entire command string*.
-            // So, we can pass DIP_CLI_PATH as command, and secondaryDipArgs as args, and set useShell to true.
-            // The original code `spawn(commandString, [], {shell: true})` is equivalent to `spawn(DIP_CLI_PATH, secondaryDipArgs, {shell: true})`
-            // if `commandString` was just `DIP_CLI_PATH` and args were `secondaryDipArgs`.
-            // The original code was `spawn(DIP_CLI_PATH + " " + secondaryDipArgs.join(' '), [], {shell: true})`
-            // This is not quite right. If shell is true, the first arg is the command to run *in the shell*.
-            // Let's stick to the original: `spawn(DIP_CLI_PATH, secondaryDipArgs, { cwd: DIP_CLI_CWD, shell: '/bin/bash' })`
-            // So, `customArgs` will be `secondaryDipArgs`, and `useShell` will be `true`.
-            
-            const secondaryDipArgs = ['-C', DIP_CLI_CWD, '-x']; // Original args for the secondary command
-            // No stdin for the secondary command as per original logic
+            const secondaryDipArgs = ['-C', DIP_CLI_CWD, '-x'];
             const secondaryDipResult = await spawnDipProcess("", secondaryDipArgs, DIP_CLI_CWD, true);
-
 
             if (!res.headersSent && !res.writableEnded) {
                 res.json({
@@ -370,7 +381,6 @@ ${commandBlock}
                 });
             }
         } else {
-            // Not a master player, send only primary command output
             if (!res.headersSent && !res.writableEnded) {
                 res.json({ stdout: primaryDipResult.stdout, stderr: primaryDipResult.stderr, success: primaryDipResult.success, exitCode: primaryDipResult.exitCode });
             }
@@ -379,17 +389,19 @@ ${commandBlock}
     } catch (dipError) {
         console.error('Failed to execute dip process for /api/execute-dip-command:', dipError);
         if (!res.headersSent && !res.writableEnded) {
-            return res.status(500).json({ error: dipError.error || 'Error executing dip process.', stderr: dipError.stderr });
+            return res.status(500).json({
+                error: dipError.error || 'Error executing dip process.',
+                stderr: dipError.stderr,
+                type: dipError.type || 'dip_command_execution_error'
+            });
         }
     }
 });
 
-// Serve the main HTML file for the root path
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 app.listen(port, () => {
     console.log(`Server listening at http://localhost:${port}`);
-    console.log(`Visit http://localhost:${port} to use the Order Helper and Map Generator.`);
 });

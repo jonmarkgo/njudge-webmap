@@ -12,6 +12,7 @@
     "cookie-parser": "^1.4.7",
     "express": "^5.1.0",
     "forever": "^4.0.3",
-    "js-cookie": "^3.0.5"
+    "js-cookie": "^3.0.5",
+    "repomix": "^0.3.5"
   }
 }
