@@ -102,6 +102,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const copyCommandsButton = document.getElementById('copyCommandsButton');
     const clearCommandsButton = document.getElementById('clearCommandsButton');
+    const executeCommandButton = document.getElementById('executeCommandButton');
+    const cliOutputBoxEl = document.getElementById('cliOutputBox');
 
     const refreshMapButton = document.getElementById('refreshMapButton');
     const mapStatusEl = document.getElementById('mapStatus');
@@ -364,13 +366,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (type === "none") {
              expenditureAmountEl.disabled = true;
-        } else if (["famine relief", "pacify rebellion", "rebel_conquered", "rebel_home"].includes(type)) {
+        } else if (["famine relief", "pacify rebellion", "rebellion"].includes(type)) {
             expTargetProvinceDivEl.classList.remove('hidden');
             expenditureAmountEl.disabled = true;
             if(type === "famine relief") expenditureAmountEl.value = 3;
             if(type === "pacify rebellion") expenditureAmountEl.value = 12;
-            if(type === "rebel_conquered") expenditureAmountEl.value = 9;
-            if(type === "rebel_home") expenditureAmountEl.value = 15;
+           // if(type === "rebel_conquered") expenditureAmountEl.value = 9;
+            if(type === "rebellion") expenditureAmountEl.value = 9;
         } else if (["counter-bribe", "disband_unit", "buy_unit"].includes(type)) {
             expTargetUnitTypeDivEl.classList.remove('hidden');
             expTargetProvinceDivEl.classList.remove('hidden');
@@ -448,12 +450,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 const convArmyLoc = convoyedArmyLocationEl.value;
                 const convArmyTarget = convoyedArmyTargetProvinceEl.value;
                 if (!convArmyLoc || !convArmyTarget) { alert("Please select convoyed army details."); return; }
-                command += `C A ${convArmyLoc} - ${convArmyTarget}`;
+                command += `T A ${convArmyLoc} - ${convArmyTarget}`;
                 break;
             case 'CONV':
                 const convertTo = convertToUnitTypeEl.value;
                 const convertToCoastVal = (convertTo === 'F') ? convertToCoastEl.value : "";
-                command += `= ${convertTo}${convertToCoastVal}`;
+                command += `C ${convertTo}${convertToCoastVal}`;
                 break;
             case 'B': command += 'B'; break;
             case 'LIFT': command += 'LS'; break;
@@ -504,7 +506,17 @@ document.addEventListener('DOMContentLoaded', () => {
                  if (!amountToUse) { alert("Please enter expenditure amount for this type."); return; }
                  command += `${amountToUse} ducats `;
             }
-            command += expType.replace(/_/g, ' ');
+            let commandActionText = "";
+            if (expType === "buy_auto_g") {
+                commandActionText = "buy";
+            } else if (expType === "commit_g_auto") {
+                commandActionText = "commit";
+            } else if (expType === "disband_auto_g" || expType === "disband_commit_g") {
+                commandActionText = "disband";
+            } else {
+                commandActionText = expType.replace(/_/g, ' ');
+            }
+            command += commandActionText;
             if (["counter-bribe", "disband_unit", "buy_unit"].includes(expType)) {
                 const unit = expTargetUnitTypeEl.value;
                 const prov = expTargetProvinceEl.value;
@@ -514,7 +526,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const prov = expTargetProvinceEl.value;
                 if (!prov) { alert("Please select target province for expenditure."); return; }
                 command += ` G ${prov}`;
-            } else if (["famine relief", "pacify rebellion", "rebel_conquered", "rebel_home"].includes(expType)) {
+            } else if (["famine relief", "pacify rebellion", "rebellion"].includes(expType)) {
                 const prov = expTargetProvinceEl.value;
                 if (!prov) { alert("Please select target province for expenditure."); return; }
                 command += ` ${prov}`;
@@ -601,6 +613,72 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     if (clearCommandsButton) clearCommandsButton.addEventListener('click', () => commandsAreaEl.value = '');
+
+    // --- EXECUTE COMMAND LOGIC ---
+    if (executeCommandButton) executeCommandButton.addEventListener('click', async () => {
+        const game = gameNameEl.value.trim();
+        const pass = passwordEl.value.trim();
+        const powerLetter = playerPowerEl.value;
+        const email = playerEmailEl.value.trim();
+
+        if (!game || !pass || !powerLetter) {
+            alert("Please fill in Game Name, Password, and Your Power in the Game Setup section before executing commands.");
+            cliOutputBoxEl.value = "Execution failed: Game Name, Password, or Player Power not set.";
+            return;
+        }
+        if (!email) {
+            alert("Please fill in Your Email in the Game Setup section.");
+            cliOutputBoxEl.value = "Execution failed: Player Email not set.";
+            return;
+        }
+
+        let existingCommands = commandsAreaEl.value.trim();
+        if (!existingCommands) {
+            alert("No commands to execute.");
+            cliOutputBoxEl.value = "No commands entered to execute.";
+            return;
+        }
+
+        const powerDetails = powers.find(p => p.letter === powerLetter);
+        const powerName = powerDetails ? powerDetails.name : powerLetter;
+        const subject = `DIP Web UI: ${powerName}`;
+
+        const signOnCommand = `SIGNON ${powerLetter}${game} ${pass} machiavelli`;
+        const signOffCommand = "SIGNOFF";
+        
+        const fullCommandBlock = `${signOnCommand}\n${existingCommands}\n${signOffCommand}`;
+
+        cliOutputBoxEl.value = "Executing command... Please wait.";
+
+        try {
+            const response = await fetch('/api/execute-dip-command', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    commandBlock: fullCommandBlock,
+                    email: email,
+                    subject: subject,
+                    gameName: game // Potentially useful for the backend
+                }),
+            });
+
+            const result = await response.json();
+
+            if (response.ok) {
+                cliOutputBoxEl.value = `Execution successful:\n\n${result.stdout || 'No output from command.'}`;
+                if(result.stderr) {
+                    cliOutputBoxEl.value += `\n\nStderr:\n${result.stderr}`;
+                }
+            } else {
+                cliOutputBoxEl.value = `Execution failed: ${result.error || response.statusText}\n\nDetails:\n${result.details || ''}\n\nStderr:\n${result.stderr || ''}`;
+            }
+        } catch (error) {
+            console.error('Error executing command:', error);
+            cliOutputBoxEl.value = `Error executing command: ${error.message}\n\nCheck console for more details.`;
+        }
+    });
 
     // --- MAP DISPLAY LOGIC ---
     if (refreshMapButton) refreshMapButton.addEventListener('click', async () => {
@@ -708,9 +786,9 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             mapStatusEl.textContent = 'Map not yet loaded. Click "Refresh Map".';
             // Automatically refresh map on load if a game name is set
-            if (gameNameEl.value) {
-                refreshMapButton.click();
-            }
+            // if (gameNameEl.value) {
+            //     refreshMapButton.click();
+            // }
 
         } catch (error) {
             console.error("Error initializing application:", error);

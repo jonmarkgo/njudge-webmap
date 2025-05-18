@@ -26,6 +26,9 @@ const DIP_SUBJECT = "map";
 // Serve static files from the 'public' directory
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Middleware to parse JSON bodies
+app.use(express.json());
+
 // API endpoint to serve the map.machiavelli data
 app.get('/api/map-file-data', (req, res) => {
     fs.readFile(MAP_DATA_FILE_PATH, 'utf8', (err, data) => {
@@ -278,6 +281,96 @@ SIGN OFF
         console.warn('dipProcess.stdin.write returned false (kernel buffer full). Waiting for drain event.');
         dipProcess.stdin.once('drain', () => {
             console.log('dipProcess.stdin drained. Now ending stdin.');
+            dipProcess.stdin.end();
+        });
+    }
+});
+
+// API endpoint to execute DIP commands
+app.post('/api/execute-dip-command', (req, res) => {
+    console.log('Received request to /api/execute-dip-command');
+    const { commandBlock, email, subject, gameName } = req.body;
+
+    if (!commandBlock || !email || !subject) {
+        return res.status(400).json({ error: 'Missing commandBlock, email, or subject in request body.' });
+    }
+
+    // Construct the input for the dip CLI
+    // This is similar to /generate-map but uses the provided commandBlock
+    // and doesn't necessarily need the "SIGNON/SIGNOFF" if commandBlock already includes it.
+    // The frontend script.js currently wraps SIGNON/SIGNOFF around existingCommands.
+    const dipStdinContent = `FROM: ${email}
+TO: ${DIP_TO_EMAIL}
+Subject: ${subject}
+Date: ${new Date().toUTCString()}
+
+${commandBlock}
+`; // Note: Frontend already adds SIGNON and SIGNOFF
+
+    console.log(`Spawning dip process for command execution: ${DIP_CLI_PATH} ${DIP_CLI_ARGS.join(' ')} with CWD: ${DIP_CLI_CWD}`);
+    const dipProcess = spawn(DIP_CLI_PATH, DIP_CLI_ARGS, { cwd: DIP_CLI_CWD });
+
+    let dipStdoutData = '';
+    let dipStderrData = '';
+
+    dipProcess.stdin.on('error', (err) => {
+        console.error('ERROR on dipProcess.stdin for command execution:', err);
+        if (!res.headersSent && !res.writableEnded) {
+            res.status(500).json({ error: `Error writing to dip process stdin: ${err.message}`, stderr: dipStderrData });
+        }
+    });
+
+    dipProcess.stdout.on('data', (data) => {
+        dipStdoutData += data.toString();
+    });
+
+    dipProcess.stderr.on('data', (data) => {
+        const errChunk = data.toString();
+        console.error(`dip stderr chunk (command execution): ${errChunk}`);
+        dipStderrData += errChunk;
+    });
+
+    dipProcess.on('error', (spawnError) => {
+        console.error('Failed to start dip process for command execution (spawn error):', spawnError);
+        if (!res.headersSent && !res.writableEnded) {
+            return res.status(500).json({ error: `Error: Failed to start dip process. ${spawnError.message}`, stderr: dipStderrData });
+        }
+    });
+
+    dipProcess.on('close', (dipCode) => {
+        console.log(`dip process (command execution) stream closed, exit code ${dipCode}.`);
+        if (dipStderrData) {
+            console.log(`--- Full dip stderr (command execution) START ---\n${dipStderrData}\n--- Full dip stderr (command execution) END ---`);
+        }
+
+        if (res.headersSent || res.writableEnded) {
+            console.log('Response already sent for /api/execute-dip-command');
+            return;
+        }
+
+        if (dipCode === 0) {
+            console.log('dip command execution successful. Stdout:\n', dipStdoutData);
+            res.json({ stdout: dipStdoutData, stderr: dipStderrData });
+        } else {
+            console.error(`Error: dip process (command execution) exited with code ${dipCode}.`);
+            res.status(500).json({
+                error: `dip process exited with code ${dipCode}.`,
+                details: `Review server logs for more details. Game: ${gameName || 'N/A'}`,
+                stdout: dipStdoutData, // Include stdout even on error, might be useful
+                stderr: dipStderrData || 'No stderr output from dip.'
+            });
+        }
+    });
+
+    console.log('Attempting to write to dip stdin (command execution):\n---START DIP STDIN---\n' + dipStdinContent + '---END DIP STDIN---');
+    const writeSuccessful = dipProcess.stdin.write(dipStdinContent);
+    if (writeSuccessful) {
+        dipProcess.stdin.end();
+        console.log('Successfully wrote to dip stdin (command execution) and closed it.');
+    } else {
+        console.warn('dipProcess.stdin.write (command execution) returned false. Waiting for drain event.');
+        dipProcess.stdin.once('drain', () => {
+            console.log('dipProcess.stdin (command execution) drained. Now ending stdin.');
             dipProcess.stdin.end();
         });
     }

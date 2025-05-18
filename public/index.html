@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chosen-js@1.8.7/chosen.min.css"/>
     <style>
         body { padding-top: 20px; background-color: #f8f9fa; }
-        .container-fluid { max-width: 1200px; }
+        .container-fluid { max-width: 1800px; } /* Increased max-width for three columns */
         .section {
             background-color: #fff;
             padding: 20px;
@@ -19,7 +19,16 @@
         }
         h1, h2, h3, h4 { color: #5a2d0c; }
         label { font-weight: bold; }
-        textarea#commandsArea { font-family: monospace; font-size: 0.9em; min-height: 400px; }
+        textarea#commandsArea { font-family: monospace; font-size: 0.9em; min-height: 200px; } /* Adjusted height */
+        textarea#cliOutputBox {
+            font-family: monospace;
+            font-size: 0.9em;
+            min-height: 400px; /* Give it substantial height */
+            background-color: #e9ecef; /* Light grey background to distinguish */
+            border: 1px solid #ced4da;
+            border-radius: .25rem;
+            width: 100%;
+        }
         .btn-brown { background-color: #8c5a3c; color: white; }
         .btn-brown:hover { background-color: #704830; color: white; }
         .hidden { display: none !important; }
@@ -29,11 +38,19 @@
         }
         #mapContainerDiv {
             width: 100%;
-            min-height: 500px;
+            min-height: 300px; /* Adjusted height */
             border: 1px solid #ccc;
         }
         .map-container {
             position: relative;
+        }
+        .cli-output-column .section {
+            height: calc(100% - 20px); /* Try to make section fill column height, accounting for margin-bottom */
+            display: flex;
+            flex-direction: column;
+        }
+        .cli-output-column textarea {
+            flex-grow: 1; /* Make textarea fill available space in section */
         }
     </style>
 </head>
@@ -46,7 +63,7 @@
 
     <div class="row">
         <!-- Left Column: Input Forms -->
-        <div class="col-md-6">
+        <div class="col-md-4">
             <div class="section" id="orderBuilder">
                 <h2>Unit Orders (Movement/Action Phase)</h2>
                 <div class="form-row mb-2">
@@ -253,8 +270,7 @@
                                 <option value="disband_commit_g">Disband Committed Garrison (12d+)</option>
                                 <option value="disband_unit">Disband Army/Fleet (bribe) (12d+)</option>
                                 <option value="buy_unit">Buy Army/Fleet/Garrison (bribe) (18d+)</option>
-                                <option value="rebel_conquered">Cause Rebellion (Conquered Prov) (9d)</option>
-                                <option value="rebel_home">Cause Rebellion (Home Prov) (15d)</option>
+                                <option value="rebellion">Cause Rebellion</option>
                                 <option value="assassinate" disabled>Assassinate (12d/24d/36d)</option>
                                 <option value="none">None (Clear this expense)</option>
                             </select>
@@ -305,8 +321,8 @@
             </div>
         </div>
 
-        <!-- Right Column: Command Output & Map -->
-        <div class="col-md-6">
+        <!-- Middle Column: Command Output & Map -->
+        <div class="col-md-4">
             <div class="section" id="commandOutput">
                 <h2>Generated Commands</h2>
                 <div class="form-group">
@@ -314,6 +330,7 @@
                 </div>
                 <div class="command-output-actions">
                     <button id="copyCommandsButton" class="btn btn-primary btn-block mb-2">Copy All with SIGNON/SIGNOFF to Clipboard</button>
+                    <button id="executeCommandButton" class="btn btn-success btn-block mb-2">Execute Command</button>
                     <button id="clearCommandsButton" class="btn btn-danger btn-block">Clear All Commands</button>
                 </div>
             </div>
@@ -366,6 +383,14 @@
                 </div>
                 <button id="saveSetupButton" class="btn btn-info btn-sm">Save Game Info</button>
                 <button id="clearSetupButton" class="btn btn-warning btn-sm">Clear Saved Game Info</button>
+            </div>
+        </div>
+
+        <!-- Right Column: CLI Output -->
+        <div class="col-md-4 cli-output-column">
+            <div class="section" id="cliOutputSection">
+                <h2>CLI Output</h2>
+                <textarea id="cliOutputBox" readonly placeholder="CLI output will appear here..."></textarea>
             </div>
         </div>
     </div>
