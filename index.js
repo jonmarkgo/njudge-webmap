@@ -25,6 +25,28 @@ const DIP_TO_EMAIL = "jonmarkgodiplomacyadjudicator@gmail.com";
 const DIP_SUBJECT = "map"; // Default subject, can be overridden
 // --- End Configuration ---
 
+// --- Input Validation Utility ---
+const INVALID_DIP_CHAR_PATTERN = /[^a-zA-Z0-9\s\-\/:@,\.]/; // Added @, ,, and .
+const ALLOWED_CHARS_DESC = "Allowed characters: letters, numbers, spaces, '-', '/', ':', '@', ',', '.'."; // Added @, ,, and .
+
+function validateDipInputContent(contentToValidate) {
+    const lines = contentToValidate.split('\n');
+    const invalidLinesFound = [];
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trimEnd(); // Check the content of each line
+        if (line && INVALID_DIP_CHAR_PATTERN.test(line)) { // Test non-empty lines
+            invalidLinesFound.push(`Line ${i + 1}: ${line}`);
+        }
+    }
+
+    if (invalidLinesFound.length > 0) {
+        return { isValid: false, invalidLines: invalidLinesFound };
+    }
+    return { isValid: true };
+}
+// --- End Input Validation Utility ---
+
 // Ensure cache directory exists
 if (!fsSync.existsSync(CACHED_MAPS_DIR)) {
     try {
@@ -38,6 +60,20 @@ if (!fsSync.existsSync(CACHED_MAPS_DIR)) {
 
 // --- Shared DIP Process Spawner ---
 async function spawnDipProcess(stdinContent, customArgs = DIP_CLI_ARGS, customCwd = DIP_CLI_CWD, useShell = false) {
+    // Final validation layer directly before spawning the process
+    const validationResult = validateDipInputContent(stdinContent);
+    if (!validationResult.isValid) {
+        const errorMessage = `Refused to spawn DIP process due to invalid characters in stdin. ${ALLOWED_CHARS_DESC}\nInvalid lines:\n${validationResult.invalidLines.join('\n')}`;
+        console.error(`[spawnDipProcessValidation] ${errorMessage}`);
+        return Promise.reject({
+            error: 'Invalid characters in DIP process input.',
+            details: errorMessage,
+            invalidLines: validationResult.invalidLines, // Pass along for potential API response
+            type: 'dip_stdin_validation_error'
+        });
+    }
+    // End of final validation layer
+
     return new Promise((resolve, reject) => {
         console.log(`Spawning dip process: ${DIP_CLI_PATH} ${customArgs.join(' ')} with CWD: ${customCwd}${useShell ? ' (using shell)' : ''}`);
         const dipProcess = spawn(DIP_CLI_PATH, customArgs, { cwd: customCwd, shell: useShell ? '/bin/bash' : undefined });
@@ -340,6 +376,18 @@ app.post('/api/execute-dip-command', async (req, res) => {
     if (!commandBlock || !email || !subject) {
         return res.status(400).json({ error: 'Missing commandBlock, email, or subject in request body.' });
     }
+
+    // Backend validation for allowed characters in commandBlock
+    const commandBlockValidation = validateDipInputContent(commandBlock);
+    if (!commandBlockValidation.isValid) {
+        console.warn('Backend validation failed for /api/execute-dip-command. Invalid lines:', commandBlockValidation.invalidLines);
+        return res.status(400).json({
+            error: 'Invalid characters in commands.',
+            details: ALLOWED_CHARS_DESC,
+            invalidLines: commandBlockValidation.invalidLines
+        });
+    }
+    // End of backend validation
 
     const playerPowerCookie = req.cookies.machHelperPlayerPower;
     const dipStdinContent = `FROM: ${email}

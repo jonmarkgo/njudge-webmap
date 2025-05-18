@@ -113,10 +113,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- LOAD/SAVE GAME SETUP FROM/TO COOKIES ---
     function saveGameSetup() {
+        const emailToSave = playerEmailEl.value.trim();
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+        if (emailToSave && !emailRegex.test(emailToSave)) {
+            alert('Invalid email format. Please correct it before saving.\nGame info (except email) will not be saved.');
+            return; // Stop saving if email is present and invalid
+        }
+
         Cookies.set('machHelperGameName', gameNameEl.value, { expires: 30, path: '/', sameSite: 'Lax' });
         Cookies.set('machHelperPassword', passwordEl.value, { expires: 30, path: '/', sameSite: 'Lax' });
         Cookies.set('machHelperPlayerPower', playerPowerEl.value, { expires: 30, path: '/', sameSite: 'Lax' });
-        Cookies.set('machHelperPlayerEmail', playerEmailEl.value, { expires: 30, path: '/', sameSite: 'Lax' });
+        
+        if (emailToSave) { // Only save email if it's valid (or was empty and now validly empty after trim)
+            Cookies.set('machHelperPlayerEmail', emailToSave, { expires: 30, path: '/', sameSite: 'Lax' });
+        } else {
+            // If email field is cleared, remove the cookie
+            Cookies.remove('machHelperPlayerEmail', { path: '/' });
+        }
         alert('Game info saved!');
     }
 
@@ -607,6 +621,28 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         let existingCommands = commandsAreaEl.value.trim();
+
+        // Frontend validation for allowed characters in commands
+        const commandLines = existingCommands.split('\n');
+        const invalidCommandPattern = /[^a-zA-Z0-9\s\-\/:]/; // Pattern to find ANY disallowed character
+        let invalidCommandsFound = [];
+
+        for (let i = 0; i < commandLines.length; i++) {
+            const line = commandLines[i].trim();
+            // Only validate non-empty lines
+            if (line && invalidCommandPattern.test(line)) {
+                invalidCommandsFound.push(`Line ${i + 1}: ${line}`);
+            }
+        }
+
+        if (invalidCommandsFound.length > 0) {
+            const errorMsg = "Execution failed: Invalid characters in commands.\nAllowed: letters, numbers, spaces, '-', '/', ':'.\n\nInvalid lines:\n" + invalidCommandsFound.join("\n");
+            alert(errorMsg);
+            cliOutputBoxEl.value = errorMsg;
+            return;
+        }
+        // End of validation
+
         if (!existingCommands) {
             alert("No commands to execute.");
             cliOutputBoxEl.value = "No commands entered to execute.";
