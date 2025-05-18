@@ -246,6 +246,7 @@
                         </div>
                     </div>
                 </div>
+                <div class="alert alert-warning" role="alert"><b>Warning:</b> If you do not explicitly MAINTAIN each of your units one by one during the build phase, they default to disbanding.</div>
                 <button id="addAdjustmentOrderButton" class="btn btn-brown btn-block">Add Adjustment Order</button>
             </div>
 
@@ -297,7 +298,7 @@
                                 <option value="give_chit" disabled>Give Assassination Chit</option>
                             </select>
                         </div>
-                        <div class="form-group col-md-6"><label for="loanAmount">Amount (Ducats):</label> <input type="number" class="form-control form-control-sm" id="loanAmount" placeholder="e.g., 10"></div>
+                        <div class="form-group col-md-6"><label for="loanAmount">Amount (Ducats):</label> <input type="number" class="form-control form-control-sm" id="loanAmount" placeholder="e.g., 10 (0 to cancel)"></div>
                     </div>
                     <div class="form-row">
                         <div id="loanDurationDiv" class="form-group col-md-4 hidden"><label for="loanDuration">Duration:</label><select id="loanDuration" class="form-control form-control-sm"><option value="1">1 Year (20%)</option><option value="2">2 Years (50%)</option></select></div>
@@ -329,9 +330,10 @@
                     <textarea id="commandsArea" class="form-control" placeholder="Commands will appear here..."></textarea>
                 </div>
                 <div class="command-output-actions">
-                    <button id="copyCommandsButton" class="btn btn-primary btn-block mb-2">Copy All with SIGNON/SIGNOFF to Clipboard</button>
                     <button id="executeCommandButton" class="btn btn-success btn-block mb-2">Execute Command</button>
+                    <button id="listGameStateButton" class="btn btn-info btn-block mb-2">List Game State</button>
                     <button id="clearCommandsButton" class="btn btn-danger btn-block">Clear All Commands</button>
+                    <button id="copyCommandsButton" class="btn btn-primary btn-block mb-2">Copy All with SIGNON/SIGNOFF to Clipboard</button>
                 </div>
             </div>
 

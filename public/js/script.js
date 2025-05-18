@@ -103,6 +103,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const copyCommandsButton = document.getElementById('copyCommandsButton');
     const clearCommandsButton = document.getElementById('clearCommandsButton');
     const executeCommandButton = document.getElementById('executeCommandButton');
+    const listGameStateButton = document.getElementById('listGameStateButton'); // Added this line
     const cliOutputBoxEl = document.getElementById('cliOutputBox');
 
     const refreshMapButton = document.getElementById('refreshMapButton');
@@ -459,7 +460,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 break;
             case 'B': command += 'B'; break;
             case 'LIFT': command += 'LS'; break;
-            case 'DISB': command += 'D'; break;
+            case 'DISB': command += 'disband'; break;
         }
         addCommandToOutput(command.trim());
     });
@@ -510,8 +511,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (expType === "buy_auto_g") {
                 commandActionText = "buy";
             } else if (expType === "commit_g_auto") {
-                commandActionText = "commit";
-            } else if (expType === "disband_auto_g" || expType === "disband_commit_g") {
+                commandActionText = "gta";
+            } else if (expType === "disband_auto_g" || expType === "disband_commit_g" || expType === "disband_unit") {
                 commandActionText = "disband";
             } else {
                 commandActionText = expType.replace(/_/g, ' ');
@@ -677,6 +678,66 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             console.error('Error executing command:', error);
             cliOutputBoxEl.value = `Error executing command: ${error.message}\n\nCheck console for more details.`;
+        }
+    });
+
+    if (listGameStateButton) listGameStateButton.addEventListener('click', async () => {
+        const game = gameNameEl.value.trim();
+        const pass = passwordEl.value.trim();
+        const powerLetter = playerPowerEl.value;
+        const email = playerEmailEl.value.trim(); // Email is needed for the API
+
+        if (!game || !pass || !powerLetter) {
+            alert("Please fill in Game Name, Password, and Your Power in the Game Setup section.");
+            cliOutputBoxEl.value = "LIST command failed: Game Name, Password, or Player Power not set.";
+            return;
+        }
+        if (!email) {
+            alert("Please fill in Your Email in the Game Setup section (required for API).");
+            cliOutputBoxEl.value = "LIST command failed: Player Email not set.";
+            return;
+        }
+
+        const powerDetails = powers.find(p => p.letter === powerLetter);
+        const powerName = powerDetails ? powerDetails.name : powerLetter;
+        // Subject might not be strictly necessary for LIST but good to keep consistent with execute
+        const subject = `DIP Web UI LIST: ${powerName} for ${game}`;
+
+        const signOnCommand = `SIGNON ${powerLetter}${game} ${pass} machiavelli`;
+        const listCommand = `LIST ${game}`; // Changed to include game name
+        const signOffCommand = "SIGNOFF";
+        
+        const fullCommandBlock = `${signOnCommand}\n${listCommand}\n${signOffCommand}`;
+
+        cliOutputBoxEl.value = "Executing LIST command... Please wait.";
+
+        try {
+            const response = await fetch('/api/execute-dip-command', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    commandBlock: fullCommandBlock,
+                    email: email,
+                    subject: subject,
+                    gameName: game
+                }),
+            });
+
+            const result = await response.json();
+
+            if (response.ok) {
+                cliOutputBoxEl.value = `LIST command successful:\n\n${result.stdout || 'No output from command.'}`;
+                if(result.stderr) {
+                    cliOutputBoxEl.value += `\n\nStderr:\n${result.stderr}`;
+                }
+            } else {
+                cliOutputBoxEl.value = `LIST command failed: ${result.error || response.statusText}\n\nDetails:\n${result.details || ''}\n\nStderr:\n${result.stderr || ''}`;
+            }
+        } catch (error) {
+            console.error('Error executing LIST command:', error);
+            cliOutputBoxEl.value = `Error executing LIST command: ${error.message}\n\nCheck console for more details.`;
         }
     });
 
